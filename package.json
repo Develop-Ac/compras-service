@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@alexssmusica/node-pdf-nfe": "^1.2.3",
-    "@aws-sdk/client-s3": "^3.922.0",
+    "@aws-sdk/client-s3": "^3.930.0",
     "@aws-sdk/s3-request-presigner": "^3.922.0",
     "@fastify/swagger": "^9.5.2",
     "@fastify/swagger-ui": "^5.2.3",

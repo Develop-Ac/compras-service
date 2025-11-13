@@ -109,7 +109,19 @@ export class PedidoService {
       maximumFractionDigits: 2,
     });
 
-    return pedidos.map((p) => {
+    // Busca for_nome para cada pedido
+    const results: Array<{
+      id: string;
+      pedido_cotacao: number;
+      for_codigo: number;
+      for_nome: string | null;
+      created_at: Date;
+      itens_count: number;
+      total_qtd: number;
+      total_valor: number;
+      total_valor_fmt: string;
+    }> = [];
+    for (const p of pedidos) {
       let totalQtd = 0;
       let totalValor = 0;
       for (const it of p.itens) {
@@ -118,17 +130,30 @@ export class PedidoService {
         totalQtd += q;
         totalValor += q * vu;
       }
-      return {
+
+      // Consulta for_nome via OPENQUERY
+      let for_nome: string | null = null;
+      try {
+        const sql = `SELECT FOR_NOME FROM OPENQUERY(CONSULTA, 'select FO.FOR_NOME from FORNECEDORES FO where FO.FOR_CODIGO = ${p.for_codigo} and FO.EMPRESA = 3')`;
+        const row = await this.oq.queryOne<{ FOR_NOME: string }>(sql, {}, { timeout: 10000 });
+        for_nome = row?.FOR_NOME ?? null;
+      } catch {
+        for_nome = null;
+      }
+
+      results.push({
         id: p.id,
         pedido_cotacao: p.pedido_cotacao,
         for_codigo: p.for_codigo,
+        for_nome,
         created_at: p.created_at,
         itens_count: p._count.itens,
         total_qtd: totalQtd,
         total_valor: totalValor,
-        total_valor_fmt: `\u00A0${fmtBR.format(totalValor)}`, // sem "R$"
-      };
-    });
+        total_valor_fmt: `\u00A0${fmtBR.format(totalValor)}`,
+      });
+    }
+    return results;
   }
 
   /**
@@ -274,6 +299,7 @@ export class PedidoService {
     // 1) Larguras base tipadas como literais
     const W = {
       ref: 70,
+      pro_codigo: 50, // <<<<<<<< NOVO: largura para pro_codigo
       descricao: 300,
       marca: 60,
       un: 20,
@@ -292,6 +318,7 @@ export class PedidoService {
     // 3) Monte as colunas sem spread condicional (evita widening para string)
     const cols: ColumnSpec[] = [
       { key: 'ref', width: W.ref, align: 'left' },
+      { key: 'pro_codigo', width: W.pro_codigo, align: 'left' }, // <<<<<<<< NOVO: coluna pro_codigo
       { key: 'descricao', width: descricaoWidth, align: 'left' },
     ];
 
@@ -309,6 +336,7 @@ export class PedidoService {
     // 4) Map de headers tipado
     const headerMap: Record<ColumnKey, string> = {
       ref: 'Ref',
+      pro_codigo: 'Código', // <<<<<<<< NOVO: header para pro_codigo
       descricao: 'Descrição',
       marca: 'Marca',
       un: 'Un',
@@ -397,6 +425,7 @@ export class PedidoService {
       // Valores crus
       const values: Record<ColumnKey, string> = {
         ref: (it.referencia ?? '').toString(),
+        pro_codigo: (it.pro_codigo ?? '').toString(), // <<<<<<<< NOVO: valor pro_codigo
         descricao: (it.pro_descricao ?? '').toString(),
         marca: (it.mar_descricao ?? '').toString(),
         un: (it.unidade ?? '').toString(),
