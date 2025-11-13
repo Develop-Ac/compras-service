@@ -88,16 +88,17 @@ async function bootstrap() {
   if (process.env.SWAGGER_ENABLED === 'true') {
     const config = new DocumentBuilder()
       .setTitle('Intranet AC Acessórios - Compras API')
-        .setDescription(`
-        API do microserviço de Compras da intranet AC Acessórios.
+          .setDescription(`
+          API do microserviço de Compras da intranet AC Acessórios.
 
-        ## Funcionalidades:
-        - **Cotações**: Gerenciamento de solicitações e respostas de cotação
-        - **Pedidos**: Criação e acompanhamento de pedidos de compra
-        - **Fornecedores**: Cadastro e consulta de fornecedores
+          ## Funcionalidades:
+          - **Cotações**: Gerenciamento de solicitações e respostas de cotação
+          - **Pedidos**: Criação e acompanhamento de pedidos de compra
+          - **Fornecedores**: Cadastro e consulta de fornecedores
+          - **Kanban**: Visualização e gerenciamento do fluxo de compras em formato Kanban
 
-        ## Autenticação:
-      A API utiliza tokens de acesso que podem ser enviados via query parameter \`token\` ou header \`Authorization: Bearer <token>\`.
+          ## Autenticação:
+          A API utiliza tokens de acesso que podem ser enviados via query parameter \`token\` ou header \`Authorization: Bearer <token>\`.
       `)
       .setVersion('2.0.0')
       .setContact('AC Acessórios - TI', 'https://acacessorios.com.br', 'ti@acacessorios.com.br')
@@ -121,7 +122,7 @@ async function bootstrap() {
       'appToken',
       )
       .addServer(process.env.PUBLIC_URL ?? 'http://localhost:8000', 'Servidor de Desenvolvimento')
-      .addServer('http://intranetbackend.acacessorios.local', 'Servidor de Produção')
+      .addServer('http://compras-service.acacessorios.local', 'Servidor de Produção')
       .build();
 
     const document = SwaggerModule.createDocument(app, config, {

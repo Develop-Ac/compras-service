@@ -2,6 +2,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model com_kanban {
+  id        String   @id @default(cuid())
+  data      Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
 datasource db {
   // provider = "sqlite"
   provider = "postgres"

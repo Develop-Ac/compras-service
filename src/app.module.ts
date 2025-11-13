@@ -10,6 +10,7 @@ import { CotacaoSyncModule } from './compras/cotacao/cotacao-sync/cotacao-sync.m
 import { PedidoModule } from './compras/cotacao/pedido/pedido.module';
 import { S3Module } from './storage/s3.module';
 import { NotaFiscalModule } from './compras/nota fiscal/nota fiscal/notaFiscal.module';
+import { kanbanModule } from './compras/kanban/kanban.module';
 
 @Module({
 imports: [
@@ -21,6 +22,7 @@ imports: [
     PedidoModule,
     S3Module,
     NotaFiscalModule,
+    kanbanModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -29,7 +31,8 @@ imports: [
       { path: 'compras', module: FornecedorModule },
       { path: 'compras', module: CotacaoSyncModule },
       { path: 'compras', module: PedidoModule },
-      { path: 'compras', module: NotaFiscalModule }
+      { path: 'compras', module: NotaFiscalModule },
+      { path: 'compras', module: kanbanModule }
     ]),
   ],
   controllers: [AppController],
