@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // provider = "sqlite"
+  provider = "postgres"
+  url      = env("DATABASE_URL")
+}
+
+model sis_usuarios {
+  id         String    @id @default(cuid())
+  nome       String
+  codigo     String    @unique
+  setor      String
+  senha      String
+  trash      Int    @default(0)
+  
+  // relação com contagem de estoque
+  est_contagem est_contagem[]
+  
+  // relação com logs de contagem
+  est_contagem_logs est_contagem_log[]
+}
+
+model com_cotacao {
+  id                String  @id @default(cuid())
+  empresa           Int
+  pedido_cotacao    Int                 @unique
+  com_cotacao_itens com_cotacao_itens[]
+}
+
+model com_cotacao_itens {
+  pedido_cotacao   Int
+  emissao          DateTime?
+  pro_codigo       Int
+  pro_descricao    String
+  mar_descricao    String?
+  referencia       String?
+  unidade          String?
+  quantidade       Int
+  dt_ultima_compra DateTime?
+  com_cotacao      com_cotacao @relation(fields: [pedido_cotacao], references: [pedido_cotacao], onDelete: Cascade)
+
+  @@id([pedido_cotacao, pro_codigo])
+}
+
+model ofi_checklists {
+  id                           String                   @id @default(cuid())
+  osInterna                    String?
+  dataHoraEntrada              DateTime?
+  observacoes                  String?
+  combustivelPercentual        Int?
+  clienteNome                  String?
+  clienteDoc                   String?
+  clienteTel                   String?
+  clienteEnd                   String?
+  veiculoNome                  String?
+  veiculoPlaca                 String?
+  veiculoCor                   String?
+  veiculoKm                    BigInt?
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+  assinaturasclienteBase64     String?
+  assinaturasresponsavelBase64 String?
+
+  // relação 1:N
+  ofi_checklists_avarias ofi_checklists_avarias[]
+  ofi_checklists_items   ofi_checklists_items[]
+}
+
+model ofi_checklists_avarias {
+  id             String                   @id @default(cuid())
+  checklistId    String
+  tipo           String?
+  peca           String?
+  observacoes    String?
+  posX           Float?
+  posY           Float?
+  posZ           Float?
+  normX          Float?
+  normY          Float?
+  normZ          Float?
+  fotoBase64     String?
+  timestamp      DateTime?
+  ofi_checklists ofi_checklists @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId])
+}
+
+model ofi_checklists_items {
+  id            String         @id @default(cuid())
+  checklistId   String
+  item          String
+  status        String
+  ofi_checklists ofi_checklists @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId])
+}
+
+model com_cotacao_for {
+  id              String   @id @default(cuid())
+  empresa         Int      @default(3)
+  pedido_cotacao  Int
+  for_codigo      Int
+  for_nome        String?
+  cpf_cnpj        String?
+  itens           com_cotacao_itens_for[]
+
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // permite múltiplos fornecedores por pedido
+  @@unique([pedido_cotacao, for_codigo], name: "pedido_for")
+  @@index([pedido_cotacao])
+}
+
+model com_cotacao_itens_for {
+  id              String   @id @default(cuid())
+  pedido_cotacao  Int
+  for_codigo      Int
+  emissao         DateTime?
+  pro_codigo      Int
+  pro_descricao   String
+  mar_descricao   String?
+  referencia      String?
+  unidade         String?
+  quantidade      Int
+  valor_unitario  Float?
+
+  cotacao com_cotacao_for @relation(fields: [pedido_cotacao, for_codigo], references: [pedido_cotacao, for_codigo], onDelete: Cascade)
+
+  @@index([pedido_cotacao, for_codigo])
+}
+
+model com_pedido {
+  id             String            @id @default(cuid()) 
+  pedido_cotacao Int
+  for_codigo     Int               // << novo: cada pedido é de um fornecedor específico
+  created_at     DateTime          @default(now())
+  updated_at     DateTime          @updatedAt
+
+  itens          com_pedido_itens[]
+
+  @@unique([pedido_cotacao, for_codigo]) // << agora o “único” é por cotação + fornecedor
+  @@index([pedido_cotacao])
+  @@index([for_codigo])
+}
+
+model com_pedido_itens {
+  id             String     @id @default(cuid()) 
+  pedido_id      String     
+  pedido         com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+
+  // espelho do payload
+  item_id_origem String?
+  pro_codigo     Int
+  pro_descricao  String
+  mar_descricao  String?
+  referencia     String?
+  unidade        String?
+  emissao        DateTime?
+
+  valor_unitario Decimal?   
+  custo_fabrica  Decimal?   
+  preco_custo    Decimal?   
+
+  for_codigo     Int        // pode manter (útil para auditoria/joins rápidos)
+  quantidade     Decimal     
+
+  created_at     DateTime    @default(now())
+
+  // evita duplicidade do mesmo produto-fornecedor dentro do mesmo pedido
+  @@unique([pedido_id, pro_codigo, for_codigo])
+  @@index([pedido_id])
+}
+
+model est_contagem {
+  id                String   @id @default(cuid())
+  colaborador       String   // referência ao ID do usuário
+  contagem          Int      @default(1) // tipo da contagem (1, 2 ou 3)
+  contagem_cuid     String?  // identificador comum para as 3 contagens criadas juntas
+  liberado_contagem Boolean  @default(false) // true quando contagem = 1, false para demais valores
+  created_at        DateTime @default(now())
+  
+  // relação com usuário
+  usuario     sis_usuarios @relation(fields: [colaborador], references: [id])
+  
+  // relação com logs
+  logs        est_contagem_log[]
+  
+  @@index([colaborador])
+  @@index([contagem_cuid])
+}
+
+model est_contagem_itens {
+  id               String   @id @default(cuid())
+  contagem_cuid    String   // referência ao grupo de contagens
+  data             DateTime
+  cod_produto      Int
+  desc_produto     String
+  mar_descricao    String?
+  ref_fabricante   String?
+  ref_fornecedor   String?
+  localizacao      String?
+  unidade          String?
+  aplicacoes       String?
+  qtde_saida       Int
+  estoque          Int
+  reserva          Int
+  conferir         Boolean  @default(true)
+  
+  // relação com logs
+  logs             est_contagem_log[]
+  
+  @@index([contagem_cuid])
+  @@index([cod_produto])
+}
+
+model est_contagem_log {
+  id           String   @id @default(cuid())
+  contagem_id  String
+  usuario_id   String
+  item_id      String
+  estoque      Int
+  contado      Int
+  created_at   DateTime @default(now())
+  
+  // Relacionamentos
+  contagem     est_contagem @relation(fields: [contagem_id], references: [id])
+  usuario      sis_usuarios @relation(fields: [usuario_id], references: [id])
+  item         est_contagem_itens @relation(fields: [item_id], references: [id])
+  
+  @@index([contagem_id])
+  @@index([usuario_id])
+  @@index([item_id])
+}
