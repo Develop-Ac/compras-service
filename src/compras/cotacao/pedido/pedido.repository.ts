@@ -67,7 +67,15 @@ export class PedidoRepository {
         const itens = await this.prisma.com_pedido_itens.findMany({
           where: { pedido_id: pedido.id },
         });
-        return { ...pedido, itens };
+        // Formata valor_unitario para padrão brasileiro
+        const itensFormatados = itens.map((item) => ({
+          ...item,
+          valor_unitario: Number(item.valor_unitario).toLocaleString('pt-BR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+        }));
+        return { ...pedido, itens: itensFormatados };
       })
     );
     return pedidosWithItens;
