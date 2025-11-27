@@ -56,4 +56,20 @@ export class PedidoRepository {
   async transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.prisma.$transaction(fn);
   }
+  /** Busca um pedido e seus itens por id (para sincronização) */
+  async findByIdWithAll(id: string) {
+    const pedidos = await this.prisma.com_pedido.findMany({
+      where: { pedido_cotacao: Number(id) },
+    });
+    if (!pedidos.length) return [];
+    const pedidosWithItens = await Promise.all(
+      pedidos.map(async (pedido) => {
+        const itens = await this.prisma.com_pedido_itens.findMany({
+          where: { pedido_id: pedido.id },
+        });
+        return { ...pedido, itens };
+      })
+    );
+    return pedidosWithItens;
+  }
 }

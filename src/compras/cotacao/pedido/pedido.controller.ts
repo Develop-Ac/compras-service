@@ -1,3 +1,5 @@
+
+// ...mantém apenas a definição única do controller e imports necessários...
 // src/pedido/pedido.controller.ts
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { PedidoService } from './pedido.service';
@@ -32,6 +34,21 @@ export class PedidoController {
   async listagem() {
     return this.service.listagem();
   } 
+
+  // GET /pedido/sincronizacao/:id  -> retorna pedido e itens completos
+  @Get('sincronizacao/:id')
+  @ApiOperation({
+    summary: 'Busca pedido completo para sincronização',
+    description: 'Retorna o pedido e todos os itens pelo id'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido',
+    example: '123'
+  })
+  async getPedidoSincronizacao(@Param('id') id: string) {
+    return this.service.buscarPedidoSincronizacao(id);
+  }
 
   // GET /pedido/:id  -> PDF
   @Get(':id')

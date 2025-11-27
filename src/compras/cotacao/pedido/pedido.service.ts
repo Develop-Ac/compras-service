@@ -14,7 +14,8 @@ type FornecedorRow = {
   CELULAR: string | null;
   FONE: string | null;
   CONTATO: string | null;
-  EMAIL: string | null;
+  /** Se false, remove a coluna "Marca" e transfere a largura para "Descrição" */
+  marca?: boolean;
 };
 
 type PdfOpts = {
@@ -68,6 +69,16 @@ export class PedidoService {
     console.warn('[PDF] Logo não encontrada. Candidatos testados:', candidates);
     return null;
   }
+
+    /**
+   * Busca pedido e itens por id (para sincronização)
+   */
+  async buscarPedidoSincronizacao(id: string) {
+    const pedido = await this.repo.findByIdWithAll(id);
+    if (!pedido) throw new NotFoundException('Pedido não encontrado');
+    return pedido;
+  }
+
 
   /** Monta a OPENQUERY corretamente (sem alias no SELECT externo) */
   private buildFornecedorOpenQuery(forCodigo: number): string {
@@ -283,7 +294,7 @@ export class PedidoService {
         yLeft += 12;
       }
 
-      const email = linha(fornecedor.EMAIL);
+      const email = fornecedor && 'EMAIL' in fornecedor ? linha((fornecedor as any).EMAIL) : '';
       if (email) {
         doc.text(email, leftX, yLeft, { width: leftColWidth, align: 'left' });
         yLeft += 12;
