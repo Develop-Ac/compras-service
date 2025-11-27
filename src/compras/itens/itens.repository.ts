@@ -30,38 +30,23 @@ export class ItensRepository {
     // A tabela com_cotacao_itens_for está no SQL Server,
     // portanto NÃO deve ser acessada via OPENQUERY/CONSULTA.
     const fbSql = `
-      SELECT
-          orc.pedido_cotacao,
-          orc.emissao,
-          iorc.pro_codigo,
-          pro.pro_descricao,
-          mar.mar_descricao,
-          pro.referencia,
-          pro.unidade,
-          iorc.quantidade,
-          pro.dt_ultima_compra
-      FROM PEDIDOS_COTACOES orc
-      LEFT JOIN PEDIDOS_COTACOES_ITENS iorc
-             ON iorc.empresa = orc.empresa
-            AND iorc.pedido_cotacao = orc.pedido_cotacao
-      LEFT JOIN PRODUTOS pro
-             ON pro.empresa = orc.empresa
-            AND pro.pro_codigo = iorc.pro_codigo
-      LEFT JOIN MARCAS mar
-             ON mar.empresa = orc.empresa
-            AND mar.mar_codigo = pro.mar_codigo
-      WHERE orc.empresa = 3
+        Select
+        pro.dt_ultima_compra,
+        pro.pro_codigo
+        from produtos pro
+        where pro.pro_codigo = ${proCodigo}
     `;
 
     const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
 
     try {
       const rows = await this.mssql.query<PedidoCotacaoRow>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
+      console.log(rows);
       // Filtra pelo proCodigo
       const item = rows.find(
         row => String(row.PRO_CODIGO) === String(proCodigo)
       );
-      
+
       // Pega a data ou null
       const dt = item?.DT_ULTIMA_COMPRA ?? item?.dt_ultima_compra ?? null;
       // Formata para dd/mm/yyyy
