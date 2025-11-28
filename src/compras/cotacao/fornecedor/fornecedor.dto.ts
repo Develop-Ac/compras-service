@@ -10,6 +10,7 @@ export class CreateFornecedorItemDto {
   REFERENCIA?: string | null;
   UNIDADE?: string | null;
   QUANTIDADE!: number | string;
+  DT_ULTIMA_COMPRA?: string | null;
 }
 
 export class CreateFornecedorDto {

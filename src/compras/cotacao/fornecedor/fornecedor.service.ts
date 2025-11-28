@@ -88,15 +88,28 @@ export class FornecedorService {
     const itensBase = await this.repository.findCotacaoItens(dto.pedido_cotacao);
 
     // 3) Monta payload no formato esperado pelo Next
-    const itensParaNext = itensBase.map((row) => ({
+    // Tipagem explícita para row, incluindo dt_ultima_compra
+    type CotacaoItemRow = {
+      emissao?: Date | string | null;
+      pro_codigo: number | string;
+      pro_descricao: string;
+      mar_descricao?: string | null;
+      referencia?: string | null;
+      unidade?: string | null;
+      quantidade: number | string;
+      dt_ultima_compra?: Date | string | null;
+    };
+
+    const itensParaNext = (itensBase as CotacaoItemRow[]).map((row) => ({
       PEDIDO_COTACAO: dto.pedido_cotacao,
       EMISSAO: row.emissao ? new Date(row.emissao as any).toISOString() : null,
-      PRO_CODIGO: (row.pro_codigo as unknown) as number | string, // se no banco for TEXT, string é segura
+      PRO_CODIGO: row.pro_codigo as number | string, // se no banco for TEXT, string é segura
       PRO_DESCRICAO: row.pro_descricao as string,
       MAR_DESCRICAO: (row.mar_descricao as string | null) ?? null,
       REFERENCIA: (row.referencia as string | null) ?? null,
       UNIDADE: (row.unidade as string | null) ?? null,
       QUANTIDADE: Number(row.quantidade),
+      DT_ULTIMA_COMPRA: row.dt_ultima_compra ?? null,
     }));
 
     // ⚠️ NÃO envie cpf_cnpj: null — use undefined para omitir no JSON
