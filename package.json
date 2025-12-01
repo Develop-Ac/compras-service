@@ -33,6 +33,7 @@
     "@prisma/client": "^5.19.0",
     "@types/helmet": "^0.0.48",
     "@types/pg": "^8.15.6",
+    "amqplib": "^0.10.9",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",

@@ -12,6 +12,7 @@ import { S3Module } from './storage/s3.module';
 import { NotaFiscalModule } from './compras/nota fiscal/nota fiscal/notaFiscal.module';
 import { kanbanModule } from './compras/kanban/kanban.module';
 import { ItensModule } from './compras/itens/intes.module';
+import { RabbitMqModule } from './compras/cotacao/job/rabbitmq.module';
 
 @Module({
 imports: [
@@ -25,6 +26,7 @@ imports: [
     NotaFiscalModule,
     kanbanModule,
     ItensModule,
+    RabbitMqModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([

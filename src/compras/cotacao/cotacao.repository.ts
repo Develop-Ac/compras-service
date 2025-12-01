@@ -103,4 +103,12 @@ export class CotacaoRepository {
     
     return { message: 'Cotação deletada com sucesso' };
   }
+
+    async deleteCotacaoByPedido(pedidoCotacao: number) {
+    await this.prisma.com_cotacao.delete({ 
+        where: { pedido_cotacao: pedidoCotacao } 
+      })
+    
+    return { message: 'Cotação deletada com sucesso' };
+  }
 }
