@@ -105,8 +105,14 @@ export class CotacaoRepository {
   }
 
     async deleteCotacaoByPedido(pedidoCotacao: number) {
-    await this.prisma.com_cotacao.delete({ 
-        where: { pedido_cotacao: pedidoCotacao } 
+      await this.prisma.$transaction(async (tx) => {
+        await tx.com_cotacao.delete({ 
+            where: { pedido_cotacao: pedidoCotacao } 
+          })
+    
+        await tx.com_cotacao_itens.deleteMany({ 
+            where: { pedido_cotacao: pedidoCotacao } 
+          });
       })
     
     return { message: 'Cotação deletada com sucesso' };
