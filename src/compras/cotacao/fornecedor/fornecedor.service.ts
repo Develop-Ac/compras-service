@@ -57,7 +57,8 @@ export class FornecedorService {
   async upsertLocalEEnviarParaNext(dtoIn: CreateFornecedorDto) {
     const dto = this.normalizeDto(dtoIn);
 
-    const base = 'http://localhost:3001'
+    const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
+    // const base = 'http://localhost:3001'
     const apiKey = this.config.get<string>('NEXT_API_KEY', '');
     if (!base) throw new Error('NEXT_BASE_URL não configurado');
     const url = new URL('/api/cotacao', base).toString();

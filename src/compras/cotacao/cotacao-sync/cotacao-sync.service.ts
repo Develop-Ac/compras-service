@@ -141,8 +141,8 @@ export class CotacaoSyncService {
 
   /** Chama o Next (GET /api/cotacao/detalhe?pedido_cotacao=) com timeout de 60s. */
   private async fetchFromNextDetalhe(pedido_cotacao: number) {
-    // const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
-    const base = 'http://localhost:3001'; // TODO: ajustar configuração depois
+    const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
+    // const base = 'http://localhost:3001'; // TODO: ajustar configuração depois
     if (!base) throw new HttpException('NEXT_BASE_URL não configurado no Nest', 500);
 
     let url: string;
