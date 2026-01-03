@@ -128,7 +128,7 @@ model com_cotacao_itens_for {
   unidade        String?
   quantidade     Int
   valor_unitario Float?
-  qtd_sugerida   Int             @default(0)
+  qtd_sugerida   Int?            @default(0)
   cotacao        com_cotacao_for @relation(fields: [pedido_cotacao, for_codigo], references: [pedido_cotacao, for_codigo], onDelete: Cascade)
 
   @@index([pedido_cotacao, for_codigo])
