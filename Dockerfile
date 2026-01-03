@@ -4,7 +4,7 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
-# Install build dependencies for canvas and other native modules
+# Install build dependencies for canvas and other native modules + OpenSSL
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcairo2-dev \
@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-dev \
     pkg-config \
+    openssl \
+    libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python for node-gyp
@@ -40,7 +43,7 @@ RUN npm run build
 FROM node:20-slim AS runtime
 WORKDIR /app
 
-# Install runtime dependencies for canvas
+# Install runtime dependencies for canvas and Prisma
 RUN apt-get update && apt-get install -y \
     libcairo2 \
     libpango-1.0-0 \
@@ -49,6 +52,8 @@ RUN apt-get update && apt-get install -y \
     libgif7 \
     librsvg2-2 \
     libpixman-1-0 \
+    openssl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
