@@ -20,6 +20,7 @@ export class FornecedorRepository {
         referencia: true,
         unidade: true,
         quantidade: true,
+        qtd_sugerida: true,
       },
     });
   }

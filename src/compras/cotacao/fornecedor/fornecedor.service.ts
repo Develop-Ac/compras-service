@@ -57,7 +57,7 @@ export class FornecedorService {
   async upsertLocalEEnviarParaNext(dtoIn: CreateFornecedorDto) {
     const dto = this.normalizeDto(dtoIn);
 
-    const base = this.config.get<string>('NEXT_BASE_URL', '');
+    const base = 'http://localhost:3001'
     const apiKey = this.config.get<string>('NEXT_API_KEY', '');
     if (!base) throw new Error('NEXT_BASE_URL não configurado');
     const url = new URL('/api/cotacao', base).toString();
@@ -97,6 +97,7 @@ export class FornecedorService {
       referencia?: string | null;
       unidade?: string | null;
       quantidade: number | string;
+      qtd_sugerida: number | string;
       dt_ultima_compra?: Date | string | null;
     };
 
@@ -109,6 +110,7 @@ export class FornecedorService {
       REFERENCIA: (row.referencia as string | null) ?? null,
       UNIDADE: (row.unidade as string | null) ?? null,
       QUANTIDADE: Number(row.quantidade),
+      QTD_SUGERIDA: Number(row.qtd_sugerida),
       DT_ULTIMA_COMPRA: row.dt_ultima_compra ?? null,
     }));
 

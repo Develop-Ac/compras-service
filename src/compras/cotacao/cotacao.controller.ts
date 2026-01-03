@@ -31,6 +31,8 @@ export class CotacaoController {
     example: { statusCode: 400, message: 'Validation failed', error: 'Bad Request' }
   })
   async create(@Body() dto: CreateCotacaoDto) {
+    console.log('cheguei')
+    console.log(dto)
     return this.service.upsertCotacao(dto);
   }
 

@@ -19,6 +19,8 @@ export class CotacaoItemDto {
 
   @IsNumber() QUANTIDADE: number;
 
+  @IsNumber() QTD_SUGERIDA: number;
+
   @ApiProperty({
     description: 'Data da última compra do produto',
     example: '2024-11-10T10:30:00.000Z',

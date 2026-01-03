@@ -19,6 +19,7 @@ export class CotacaoRepository {
       referencia: string | null;
       unidade: string | null;
       quantidade: number;
+      qtd_sugerida: number;
       dt_ultima_compra: Date | null;
     }>,
   ) {

@@ -20,6 +20,7 @@ export class CotacaoSyncRepository {
         referencia: string | null;
         unidade: string | null;
         quantidade: number;
+        qtd_sugerida: number;
         valor_unitario: number | null;
         dt_ultima_compra?: Date | null;
       }>;
@@ -59,6 +60,7 @@ export class CotacaoSyncRepository {
             referencia: i.referencia,
             unidade: i.unidade,
             quantidade: i.quantidade,
+            qtd_sugerida: i.qtd_sugerida,
             valor_unitario: i.valor_unitario,
             dt_ultima_compra: i.dt_ultima_compra,
           }));

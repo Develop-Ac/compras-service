@@ -26,6 +26,7 @@ export class CotacaoService {
       referencia: i.REFERENCIA ?? null,
       unidade: i.UNIDADE ?? null,
       quantidade: Number(i.QUANTIDADE),
+      qtd_sugerida: Number(i.QTD_SUGERIDA),
       dt_ultima_compra: i.DT_ULTIMA_COMPRA ? new Date(i.DT_ULTIMA_COMPRA) : null,
     }));
 
