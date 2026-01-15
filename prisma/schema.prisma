@@ -163,6 +163,8 @@ model com_pedido_itens {
   for_codigo     Int
   quantidade     Decimal
   created_at     DateTime   @default(now())
+  renato         Boolean?   @default(false)
+  carlos         Boolean?   @default(false)
   pedido         com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
@@ -177,6 +179,7 @@ model est_contagem {
   liberado_contagem Boolean            @default(false)
   contagem_cuid     String?
   piso              String?            @db.VarChar
+  status            Int                @default(0)
   usuario           sis_usuarios       @relation(fields: [colaborador], references: [id])
   logs              est_contagem_log[]
 
@@ -263,11 +266,15 @@ model com_fifo_completo {
   alerta_tendencia_alta      String?   @db.VarChar(10)
   descricao_calculo_estoque  String?
   created_at                 DateTime? @default(now()) @db.Timestamp(6)
+  sgr_codigo                 Int?
+  teve_alteracao_analise     Boolean?  @default(false)
+  dados_alteracao_json       String?
 
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
   @@index([curva_abc], map: "idx_com_fifo_curva_abc")
   @@index([data_processamento], map: "idx_com_fifo_data_processamento")
   @@index([pro_codigo], map: "idx_com_fifo_pro_codigo")
+  @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
 }
 
 model com_metricas_fifo {
@@ -529,4 +536,33 @@ model sis_permissoes {
   criar        Boolean      @default(false)
   deletar      Boolean      @default(false)
   sis_usuarios sis_usuarios @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model eco_produtos_carros_erro {
+  pro_codigo    String? @db.VarChar(50)
+  pro_descricao String? @db.VarChar(500)
+  referencia    String? @db.VarChar(100)
+  carro_1       String? @db.VarChar(150)
+  ano_1         String? @db.VarChar(100)
+  carro_2       String? @db.VarChar(150)
+  ano_2         String? @db.VarChar(100)
+  carro_3       String? @db.VarChar(150)
+  ano_3         String? @db.VarChar(100)
+  carro_4       String? @db.VarChar(150)
+  ano_4         String? @db.VarChar(100)
+  carro_5       String? @db.VarChar(150)
+  ano_5         String? @db.VarChar(100)
+  carro_6       String? @db.VarChar(150)
+  ano_6         String? @db.VarChar(100)
+  carro_7       String? @db.VarChar(150)
+  ano_7         String? @db.VarChar(100)
+  carro_8       String? @db.VarChar(150)
+  ano_8         String? @db.VarChar(100)
+  carro_9       String? @db.VarChar(150)
+  ano_9         String? @db.VarChar(100)
+  carro_10      String? @db.VarChar(150)
+  ano_10        String? @db.VarChar(100)
+
+  @@ignore
 }

@@ -28,6 +28,38 @@ export class PedidoRepository {
     });
   }
 
+  /** Busca um pedido por id com todos os dados (para gerencial) */
+  async findByIdGerencial(id: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id },
+      include: { 
+        itens: {
+          orderBy: { created_at: 'asc' }
+        }
+      },
+    });
+  }
+
+  /**
+   * Atualiza autorização de um item do pedido.
+   * @param itemId ID do item
+   * @param coluna 'carlos' | 'renato'
+   * @param check boolean
+   */
+  async updateItemAutorizacao(itemId: string, coluna: 'carlos' | 'renato', check: boolean) {
+      // Ajuste os nomes das colunas conforme seu schema
+      const data: any = {};
+      if (coluna === 'carlos') data.carlos = check;
+      if (coluna === 'renato') data.renato = check;
+  
+      return this.prisma.com_pedido_itens.update({
+        where: { id: itemId },
+        data,
+      });
+    }
+  
+  // ...existing code...
+
   /** Upsert do cabeçalho por (pedido_cotacao, for_codigo) dentro de TX */
   async upsertPedidoByCotacaoFornecedor(
     tx: Tx,

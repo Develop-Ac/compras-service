@@ -79,6 +79,100 @@ export class PedidoService {
     return pedido;
   }
 
+  /**
+   * Busca pedido e itens completos por id (para gerencial)
+   */
+  async buscarPedidoGerencial(id: string) {
+    const pedido = await this.repo.findByIdGerencial(id);
+
+    if (pedido  !== null && pedido.itens  !== null) {
+      pedido.itens = await Promise.all( 
+        pedido.itens.map(async (item) => {
+          const valores = await this.getValoresGerenciais(item.pro_codigo);
+
+          return {
+            ...item,
+            ...valores,
+            pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
+          };
+        })
+      );
+    }
+
+
+    if (!pedido) throw new NotFoundException('Pedido não encontrado');
+    return pedido;
+  }
+
+
+  private async getValoresGerenciais(pro_codigo: number) {
+    const innerFbQuery = `
+      SELECT
+        nfsi.pro_codigo,
+        pro.pro_descricao,
+
+        SUM(
+          CASE
+            WHEN nfs.dt_emissao >= (CURRENT_DATE - 365)
+            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
+            ELSE 0
+          END
+        ) / 12.0 AS media_mensal_12m,
+
+        SUM(
+          CASE
+            WHEN nfs.dt_emissao >= (CURRENT_DATE - 90)
+            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
+            ELSE 0
+          END
+        ) / 3.0 AS media_mensal_3m,
+
+        SUM(
+          CASE
+            WHEN nfs.dt_emissao >= (CURRENT_DATE - 365)
+            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
+            ELSE 0
+          END
+        ) AS total_qtd_12m,
+
+        SUM(
+          CASE
+            WHEN nfs.dt_emissao >= (CURRENT_DATE - 90)
+            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
+            ELSE 0
+          END
+        ) AS total_qtd_3m
+
+      FROM nf_saida nfs
+      JOIN nfs_itens nfsi
+        ON nfs.empresa = nfsi.empresa
+      AND nfs.nfs     = nfsi.nfs
+      LEFT JOIN produtos pro
+        ON pro.empresa    = nfs.empresa
+      AND pro.pro_codigo = nfsi.pro_codigo
+
+      WHERE nfs.empresa = 3
+        AND nfs.opf_codigo IN ('1','3','4','5','6','7','8')
+        AND nfs.dt_cancelamento IS NULL
+        AND nfs.dt_emissao >= (CURRENT_DATE - 365)
+        AND nfsi.pro_codigo = ${Number(pro_codigo)}
+
+      GROUP BY nfsi.pro_codigo, pro.pro_descricao
+    `.trim();
+
+    const escaped = innerFbQuery.replace(/'/g, "''");
+
+    const sql = `SELECT * FROM OPENQUERY(CONSULTA, '${escaped}')`;
+
+    return await this.oq.queryOne<{
+      pro_codigo: number;
+      pro_descricao: string | null;
+      media_mensal_12m: number | null;
+      media_mensal_3m: number | null;
+      total_qtd_12m: number | null;
+      total_qtd_3m: number | null;
+    }>(sql, {}, { timeout: 60000 });
+  }
 
   /** Monta a OPENQUERY corretamente (sem alias no SELECT externo) */
   private buildFornecedorOpenQuery(forCodigo: number): string {
@@ -183,6 +277,7 @@ export class PedidoService {
     opts?: PdfOpts, // <<<<<<<<<<<<< adicionamos opts.marca
   ) {
     const pedido = await this.repo.findByIdWithItens(id);
+    console.log(pedido);
     if (!pedido) throw new NotFoundException('Pedido não encontrado');
 
     // Busca fornecedor via OPENQUERY antes de montar o PDF
@@ -553,6 +648,34 @@ export class PedidoService {
         ...p,
         pdf_url: `${BASE}/pedido/${p.id}`,
       })),
+    };
+  }
+
+  /** Atualiza autorização de um item do pedido */
+  async atualizarAutorizacaoItem(
+    pedidoId: string, 
+    itemId: string, 
+    coluna: 'carlos' | 'renato', 
+    check: boolean
+  ) {
+    // Primeiro verifica se o item pertence ao pedido
+    const item = await this.repo.findByIdWithItens(pedidoId);
+    if (!item) {
+      throw new NotFoundException('Pedido não encontrado');
+    }
+
+    const itemExiste = item.itens.some(i => i.id === itemId);
+    if (!itemExiste) {
+      throw new NotFoundException('Item não encontrado no pedido');
+    }
+
+    // Atualiza a autorização
+    const itemAtualizado = await this.repo.updateItemAutorizacao(itemId, coluna, check);
+    
+    return {
+      ok: true,
+      message: `Autorização ${coluna} ${check ? 'concedida' : 'removida'} para o item`,
+      item: itemAtualizado
     };
   }
 }
