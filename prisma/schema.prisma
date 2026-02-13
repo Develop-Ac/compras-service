@@ -8,13 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model com_kanban {
-  id        String   @id @default(cuid())
-  data      Json
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-}
-
 model sis_usuarios {
   nome              String
   senha             String
@@ -22,8 +15,14 @@ model sis_usuarios {
   id                String             @id @default(cuid())
   codigo            String             @unique
   setor             String
+  avatar_url        String?
+  tema_preferencia  String             @default("system")
+  est_auditoria     est_auditoria[]
   est_contagem      est_contagem[]
   est_contagem_logs est_contagem_log[]
+  fed_comentarios   fed_comentarios[]
+  fed_eventos       fed_eventos[]
+  fed_posts         fed_posts[]
   sis_permissoes    sis_permissoes[]
 }
 
@@ -31,6 +30,7 @@ model com_cotacao {
   id                String              @id @default(cuid())
   empresa           Int
   pedido_cotacao    Int                 @unique
+  indice            Int                 @unique(map: "com_cotacao_indice_unique") @default(autoincrement())
   com_cotacao_itens com_cotacao_itens[]
 }
 
@@ -180,6 +180,7 @@ model est_contagem {
   contagem_cuid     String?
   piso              String?            @db.VarChar
   status            Int                @default(0)
+  tipo              Int                @default(1)
   usuario           sis_usuarios       @relation(fields: [colaborador], references: [id])
   logs              est_contagem_log[]
 
@@ -228,6 +229,16 @@ model est_contagem_log {
   @@index([item_id])
 }
 
+model com_data_saldo_produto {
+  id             Int       @id @default(autoincrement())
+  pro_codigo     String?   @db.VarChar(50)
+  data_compra    DateTime? @db.Date
+  saldo_residual Decimal?  @db.Decimal(15, 4)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([pro_codigo], map: "idx_saldo_prod_codigo")
+}
+
 model com_fifo_completo {
   id                         Int       @id @default(autoincrement())
   data_processamento         DateTime? @default(now()) @db.Timestamp(6)
@@ -269,12 +280,39 @@ model com_fifo_completo {
   sgr_codigo                 Int?
   teve_alteracao_analise     Boolean?  @default(false)
   dados_alteracao_json       String?
+  sgr_descricao              String?   @db.VarChar(200)
+  group_id                   String?   @db.VarChar(100)
+  grp_estoque_disponivel     Decimal?  @db.Decimal(15, 4)
+  grp_qtd_vendida            Decimal?  @db.Decimal(15, 4)
+  grp_valor_vendido          Decimal?  @db.Decimal(15, 4)
+  grp_num_vendas             Int?
+  grp_vendas_ult_12m         Decimal?  @db.Decimal(15, 4)
+  grp_vendas_12m_ant         Decimal?  @db.Decimal(15, 4)
+  grp_estoque_min_base       Int?
+  grp_estoque_max_base       Int?
+  grp_estoque_min_ajustado   Int?
+  grp_estoque_max_ajustado   Int?
+  grp_estoque_min_sugerido   Int?
+  grp_estoque_max_sugerido   Int?
+  grp_demanda_media_dia      Decimal?  @db.Decimal(15, 6)
+  rateio_prop_grupo          Decimal?  @db.Decimal(10, 6)
+  tempo_medio_saldo_atual    Decimal?  @db.Decimal(15, 2)
+  categoria_saldo_atual      String?   @db.VarChar(50)
 
+  @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
+  @@index([categoria_saldo_atual], map: "idx_com_fifo_categoria_saldo_atual")
   @@index([curva_abc], map: "idx_com_fifo_curva_abc")
   @@index([data_processamento], map: "idx_com_fifo_data_processamento")
+  @@index([group_id], map: "idx_com_fifo_group_id")
   @@index([pro_codigo], map: "idx_com_fifo_pro_codigo")
-  @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
+}
+
+model com_kanban {
+  id        String   @id
+  data      Json
+  updatedAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model com_metricas_fifo {
@@ -335,6 +373,16 @@ model com_pagamento_guia {
   observacoes    String   @default("")
 }
 
+model com_relacionamento_itens {
+  id         Int       @id @default(autoincrement())
+  group_id   String    @db.VarChar(100)
+  pro_codigo String    @unique @db.VarChar(50)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([group_id], map: "idx_rel_group_id")
+  @@index([pro_codigo], map: "idx_rel_pro_codigo")
+}
+
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model eco_produtos_carros {
   pro_codigo    String? @db.VarChar(50)
@@ -362,6 +410,105 @@ model eco_produtos_carros {
   ano_10        String? @db.VarChar(100)
 
   @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model eco_produtos_carros_erro {
+  pro_codigo    String? @db.VarChar(50)
+  pro_descricao String? @db.VarChar(500)
+  referencia    String? @db.VarChar(100)
+  carro_1       String? @db.VarChar(150)
+  ano_1         String? @db.VarChar(100)
+  carro_2       String? @db.VarChar(150)
+  ano_2         String? @db.VarChar(100)
+  carro_3       String? @db.VarChar(150)
+  ano_3         String? @db.VarChar(100)
+  carro_4       String? @db.VarChar(150)
+  ano_4         String? @db.VarChar(100)
+  carro_5       String? @db.VarChar(150)
+  ano_5         String? @db.VarChar(100)
+  carro_6       String? @db.VarChar(150)
+  ano_6         String? @db.VarChar(100)
+  carro_7       String? @db.VarChar(150)
+  ano_7         String? @db.VarChar(100)
+  carro_8       String? @db.VarChar(150)
+  ano_8         String? @db.VarChar(100)
+  carro_9       String? @db.VarChar(150)
+  ano_9         String? @db.VarChar(100)
+  carro_10      String? @db.VarChar(150)
+  ano_10        String? @db.VarChar(100)
+
+  @@ignore
+}
+
+model est_auditoria {
+  id                   String       @id
+  contagem_cuid        String
+  data_auditoria       DateTime     @default(now())
+  cod_produto          Int
+  diferenca_apontada   Int
+  status               Int          @default(0)
+  observacao           String?
+  usuario_id           String
+  created_at           DateTime     @default(now())
+  updated_at           DateTime
+  quantidade_movimento Int?
+  tipo_movimento       String?      @db.VarChar(20)
+  sis_usuarios         sis_usuarios @relation(fields: [usuario_id], references: [id])
+
+  @@index([cod_produto])
+  @@index([contagem_cuid])
+  @@index([status])
+}
+
+model fed_comentarios {
+  id           String       @id
+  conteudo     String
+  autor_id     String
+  post_id      String
+  criado_em    DateTime     @default(now())
+  sis_usuarios sis_usuarios @relation(fields: [autor_id], references: [id])
+  fed_posts    fed_posts    @relation(fields: [post_id], references: [id], onDelete: Cascade)
+}
+
+model fed_eventos {
+  id           String       @id
+  titulo       String
+  descricao    String?
+  data         DateTime     @db.Date
+  hora         String
+  local        String
+  tipo         String
+  autor_id     String
+  criado_em    DateTime     @default(now())
+  sis_usuarios sis_usuarios @relation(fields: [autor_id], references: [id])
+
+  @@index([data])
+}
+
+model fed_midia {
+  id        String     @id
+  url       String
+  tipo      String
+  bucket    String     @default("feed")
+  chave     String
+  post_id   String?
+  fed_posts fed_posts? @relation(fields: [post_id], references: [id], onDelete: Cascade)
+}
+
+model fed_posts {
+  id              String            @id
+  conteudo        String?
+  autor_id        String
+  tipo            String            @default("texto")
+  criado_em       DateTime          @default(now())
+  atualizado_em   DateTime
+  curtidas        Int               @default(0)
+  fed_comentarios fed_comentarios[]
+  fed_midia       fed_midia[]
+  sis_usuarios    sis_usuarios      @relation(fields: [autor_id], references: [id])
+
+  @@index([autor_id])
 }
 
 model gar_anexos_garantias {
@@ -526,6 +673,24 @@ model sac_kanban_imagens {
   sac_kanban sac_kanban @relation(fields: [kanban_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
+model sis_feriados {
+  id          String   @id
+  external_id String?
+  data        DateTime @db.Date
+  nome        String
+  tipo        String
+  descricao   String?
+  uf          String?  @db.VarChar(2)
+  codigo_ibge Int?
+  ano         Int
+  criado_em   DateTime @default(now())
+  municipio   String?
+
+  @@index([ano])
+  @@index([data])
+  @@index([tipo])
+}
+
 model sis_permissoes {
   id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
   usuario_id   String       @db.VarChar(36)
@@ -536,33 +701,4 @@ model sis_permissoes {
   criar        Boolean      @default(false)
   deletar      Boolean      @default(false)
   sis_usuarios sis_usuarios @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario")
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model eco_produtos_carros_erro {
-  pro_codigo    String? @db.VarChar(50)
-  pro_descricao String? @db.VarChar(500)
-  referencia    String? @db.VarChar(100)
-  carro_1       String? @db.VarChar(150)
-  ano_1         String? @db.VarChar(100)
-  carro_2       String? @db.VarChar(150)
-  ano_2         String? @db.VarChar(100)
-  carro_3       String? @db.VarChar(150)
-  ano_3         String? @db.VarChar(100)
-  carro_4       String? @db.VarChar(150)
-  ano_4         String? @db.VarChar(100)
-  carro_5       String? @db.VarChar(150)
-  ano_5         String? @db.VarChar(100)
-  carro_6       String? @db.VarChar(150)
-  ano_6         String? @db.VarChar(100)
-  carro_7       String? @db.VarChar(150)
-  ano_7         String? @db.VarChar(100)
-  carro_8       String? @db.VarChar(150)
-  ano_8         String? @db.VarChar(100)
-  carro_9       String? @db.VarChar(150)
-  ano_9         String? @db.VarChar(100)
-  carro_10      String? @db.VarChar(150)
-  ano_10        String? @db.VarChar(100)
-
-  @@ignore
 }

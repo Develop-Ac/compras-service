@@ -14,6 +14,10 @@ type ListAllParams = {
 export class CotacaoService {
   constructor(private readonly repo: CotacaoRepository) {}
 
+  async getNextIndice() {
+    return this.repo.getNextIndice();
+  }
+
   async upsertCotacao(dto: CreateCotacaoDto) {
     const { empresa, pedido_cotacao, itens } = dto;
 

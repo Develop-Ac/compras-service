@@ -118,4 +118,12 @@ export class CotacaoRepository {
     
     return { message: 'Cotação deletada com sucesso' };
   }
+
+  async getNextIndice(): Promise<number> {
+    const result = await this.prisma.com_cotacao.findFirst({
+      orderBy: { indice: 'desc' },
+      select: { indice: true },
+    });
+    return (result?.indice ?? 0) + 1;
+  }  
 }

@@ -17,6 +17,14 @@ import {
 export class CotacaoController {
   constructor(private service: CotacaoService) {}
 
+  @Get('proximo-indice')
+  @ApiOperation({ summary: 'Retorna o próximo índice disponível da tabela com_cotacao' })
+  @ApiOkResponse({ description: 'Próximo índice retornado com sucesso', schema: { example: { proximoIndice: 123 } } })
+  async getProximoIndice() {
+    const proximoIndice = await this.service.getNextIndice();
+    return { proximoIndice };
+  }
+
   // POST /compras/pedidos-cotacao
   @Post()
   @ApiOperation({ 
