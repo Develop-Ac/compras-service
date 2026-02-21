@@ -18,9 +18,14 @@ export class kanbanRepository {
   }
 
   async create(data: any) {
-      // Envia apenas o campo 'data' para o Prisma
-      return this.prisma.com_kanban.create({
-        data: { data: data.data }
-      });
+    // Gera um id automaticamente (cuid) e preenche updatedAt
+    const cuid = await import('cuid');
+    return this.prisma.com_kanban.create({
+      data: {
+        id: cuid.default(),
+        data: data.data,
+        updatedAt: new Date()
+      }
+    });
   }
 }
