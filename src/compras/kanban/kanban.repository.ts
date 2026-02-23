@@ -14,7 +14,7 @@ export class kanbanRepository {
       console.log('Updating kanban with id:', id, 'and data:', data);
       return this.prisma.com_kanban.update({
         where: { id },
-        data: { data: data.data, updatedAt: new Date() }
+        data: { data: data, updatedAt: new Date() }
       });
   }
 
