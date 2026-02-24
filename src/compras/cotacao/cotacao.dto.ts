@@ -34,6 +34,7 @@ export class CotacaoItemDto {
 export class CreateCotacaoDto {
   @IsInt() empresa: number;
   @IsInt() pedido_cotacao: number;
+  @IsString() usuario: string;
 
   @IsArray()
   @ValidateNested({ each: true })

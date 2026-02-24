@@ -36,6 +36,18 @@ export class CotacaoService {
 
     await this.repo.upsertCotacaoWithItems(empresa, pedido_cotacao, itensLower);
 
+    await fetch('http://log-service.acacessorios.local/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: dto.usuario,
+        setor: 'Compras',
+        tela: 'Cotação de Compra',
+        acao: 'Create',
+        descricao: `Criada cotação ${pedido_cotacao} com ${itensLower.length} itens.`,
+      }),
+    });
+
     return { ok: true, empresa, pedido_cotacao, total_itens: itensLower.length };
   }
 

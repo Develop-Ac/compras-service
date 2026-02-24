@@ -641,6 +641,18 @@ export class PedidoService {
       return created;
     });
 
+    await fetch('http://log-service.acacessorios.local/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario: dto.usuario,
+          setor: 'Compras',
+          tela: 'Comparativo',
+          acao: 'Create',
+          descricao: `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores`,
+        }),
+      });
+
     return {
       ok: true,
       pedidos_criados: result.length,

@@ -28,6 +28,9 @@ export class CreateFornecedorDto {
   @IsOptional()
   cpf_cnpj?: string;
 
+  @IsString()
+  usuario: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateFornecedorItemDto)

@@ -149,6 +149,18 @@ export class FornecedorService {
         throw new HttpException(data?.error || 'Falha ao processar no Next', status);
       }
 
+      await fetch('http://log-service.acacessorios.local/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario: dto.usuario,
+          setor: 'Compras',
+          tela: 'Cotação de Compra',
+          acao: 'Create',
+          descricao: `Enviada cotação ${dto.pedido_cotacao} para o fornecedor ${dto.for_codigo} no Portal-Fornecedor com ${itensParaNext.length} itens.`,
+        }),
+      });
+
       return { ok: true, next: data, itens_enviados: itensParaNext.length };
     } catch (err) {
       const e = err as AxiosError<any>;
