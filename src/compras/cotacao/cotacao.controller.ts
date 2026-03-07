@@ -1,3 +1,4 @@
+
 // src/compras/cotacao.controller.ts
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { CotacaoService } from './cotacao.service';
@@ -16,6 +17,59 @@ import {
 @Controller('pedidos-cotacao')
 export class CotacaoController {
   constructor(private service: CotacaoService) {}
+
+    /**
+   * GET /compras/pedidos-cotacao/:pedido/itens?empresa=3
+   * Retorna cotação customizada (empresa, pedido_cotacao, total_itens, itens)
+   */
+  @Get(':pedido/itens')
+  @ApiOperation({
+    summary: 'Obtém cotação customizada',
+    description: 'Retorna cotação no formato customizado (empresa, pedido_cotacao, total_itens, itens)'
+  })
+  @ApiParam({
+    name: 'pedido',
+    description: 'Número do pedido',
+    example: 4131,
+    type: 'number',
+  })
+  @ApiQuery({
+    name: 'empresa',
+    description: 'Código da empresa',
+    example: 3,
+    type: 'number',
+    required: true,
+  })
+  @ApiOkResponse({
+    description: 'Cotação customizada retornada com sucesso',
+    schema: {
+      example: {
+        empresa: 3,
+        pedido_cotacao: 4131,
+        total_itens: 24,
+        itens: [
+          {
+            PEDIDO_COTACAO: 4131,
+            EMISSAO: '2026-02-10T00:00:00.000Z',
+            PRO_CODIGO: 48293,
+            PRO_DESCRICAO: 'ARRUELA CALOTA 13/14/15/16 KIT  (METAL)',
+            MAR_DESCRICAO: 'SPORT INOX',
+            REFERENCIA: 'ARR-01',
+            UNIDADE: 'KT',
+            QUANTIDADE: 40,
+            DT_ULTIMA_COMPRA: '2025-10-03T00:00:00.000Z',
+            emissao: null,
+          },
+        ],
+      },
+    },
+  })
+  async getCotacaoItens(
+    @Param('pedido', ParseIntPipe) pedido: number,
+    @Query('empresa', ParseIntPipe) empresa: number,
+  ) {
+    return this.service.getCotacaoItens(empresa, pedido);
+  }
 
   @Get('proximo-indice')
   @ApiOperation({ summary: 'Retorna o próximo índice disponível da tabela com_cotacao' })

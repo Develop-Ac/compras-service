@@ -1,3 +1,4 @@
+
 // src/compras/cotacao.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CotacaoRepository } from './cotacao.repository';
@@ -13,6 +14,38 @@ type ListAllParams = {
 @Injectable()
 export class CotacaoService {
   constructor(private readonly repo: CotacaoRepository) {}
+
+    /**
+   * Retorna cotação customizada (empresa, pedido_cotacao, total_itens, itens)
+   */
+  async getCotacaoItens(empresa: number, pedido_cotacao: number) {
+    // Busca header da cotação
+    const header = await this.repo.getCotacaoHeader(pedido_cotacao);
+    if (!header || header.empresa !== empresa) {
+      throw new NotFoundException('Pedido de cotação não encontrado.');
+    }
+    // Busca itens da cotação
+    const itens = await this.repo.listItensByPedido(pedido_cotacao);
+    // Monta resposta conforme solicitado
+    const itensFormatados = itens.map((item) => ({
+      PEDIDO_COTACAO: item.pedido_cotacao,
+      EMISSAO: item.emissao ? item.emissao.toISOString() : null,
+      PRO_CODIGO: item.pro_codigo,
+      PRO_DESCRICAO: item.pro_descricao,
+      MAR_DESCRICAO: item.mar_descricao,
+      REFERENCIA: item.referencia,
+      UNIDADE: item.unidade,
+      QUANTIDADE: item.quantidade,
+      DT_ULTIMA_COMPRA: item.dt_ultima_compra ? item.dt_ultima_compra.toISOString() : null,
+      emissao: null, // conforme exemplo fornecido
+    }));
+    return {
+      empresa: header.empresa,
+      pedido_cotacao: header.pedido_cotacao,
+      total_itens: itensFormatados.length,
+      itens: itensFormatados,
+    };
+  }
 
   async getNextIndice() {
     return this.repo.getNextIndice();

@@ -1,3 +1,4 @@
+// Os métodos getCotacaoHeader e listItensByPedido já retornam os dados necessários para o endpoint customizado.
 // src/compras/cotacao/cotacao.repository.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
