@@ -59,7 +59,7 @@ export class CotacaoRepository {
   listHeaders(where: Prisma.com_cotacaoWhereInput, page: number, pageSize: number) {
     return this.prisma.com_cotacao.findMany({
       where,
-      orderBy: { pedido_cotacao: 'desc' },
+      orderBy: { created_at: 'desc', pedido_cotacao: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: { id: true, empresa: true, pedido_cotacao: true },

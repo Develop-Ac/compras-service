@@ -14,13 +14,15 @@ model sis_usuarios {
   trash             Int                @default(0)
   id                String             @id @default(cuid())
   codigo            String             @unique
-  setor             String
+  perfil_acesso     String
   avatar_url        String?
   tema_preferencia  String             @default("system")
+  setor             String?            @db.VarChar(255)
   est_auditoria     est_auditoria[]
   est_contagem      est_contagem[]
   est_contagem_logs est_contagem_log[]
   fed_comentarios   fed_comentarios[]
+  fed_curtidas      fed_curtidas[]
   fed_eventos       fed_eventos[]
   fed_posts         fed_posts[]
   sis_permissoes    sis_permissoes[]
@@ -31,6 +33,7 @@ model com_cotacao {
   empresa           Int
   pedido_cotacao    Int                 @unique
   indice            Int                 @unique(map: "com_cotacao_indice_unique") @default(autoincrement())
+  created_at        DateTime?           @default(now()) @db.Timestamp(6)
   com_cotacao_itens com_cotacao_itens[]
 }
 
@@ -298,6 +301,7 @@ model com_fifo_completo {
   rateio_prop_grupo          Decimal?  @db.Decimal(10, 6)
   tempo_medio_saldo_atual    Decimal?  @db.Decimal(15, 2)
   categoria_saldo_atual      String?   @db.VarChar(50)
+  pro_referencia             String?
 
   @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
@@ -364,6 +368,7 @@ model com_nfe_conciliacao {
   created_at         DateTime @default(now())
   tipo_operacao      Int      @default(0)
   tipo_operacao_desc String   @default("ENTRADA PRÓPRIA")
+  tipo_imposto       String?  @db.VarChar(50)
 }
 
 model com_pagamento_guia {
@@ -408,6 +413,7 @@ model eco_produtos_carros {
   ano_9         String? @db.VarChar(100)
   carro_10      String? @db.VarChar(150)
   ano_10        String? @db.VarChar(100)
+  id            BigInt  @id @default(autoincrement())
 
   @@ignore
 }
@@ -505,6 +511,7 @@ model fed_posts {
   atualizado_em   DateTime
   curtidas        Int               @default(0)
   fed_comentarios fed_comentarios[]
+  fed_curtidas    fed_curtidas[]
   fed_midia       fed_midia[]
   sis_usuarios    sis_usuarios      @relation(fields: [autor_id], references: [id])
 
@@ -701,4 +708,26 @@ model sis_permissoes {
   criar        Boolean      @default(false)
   deletar      Boolean      @default(false)
   sis_usuarios sis_usuarios @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario")
+}
+
+model fed_curtidas {
+  id           String       @id
+  autor_id     String
+  post_id      String
+  criado_em    DateTime     @default(now())
+  sis_usuarios sis_usuarios @relation(fields: [autor_id], references: [id])
+  fed_posts    fed_posts    @relation(fields: [post_id], references: [id], onDelete: Cascade)
+
+  @@unique([autor_id, post_id])
+  @@index([post_id])
+}
+
+model sis_log {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  usuario    String    @db.VarChar(100)
+  setor      String    @db.VarChar(100)
+  tela       String    @db.VarChar(100)
+  acao       String    @db.VarChar(100)
+  descricao  String
+  created_at DateTime? @default(now()) @db.Timestamp(6)
 }
