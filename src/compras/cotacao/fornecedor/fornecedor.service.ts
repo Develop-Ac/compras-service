@@ -16,6 +16,15 @@ export class FornecedorService {
     private readonly config: ConfigService,
   ) {}
 
+    /**
+   * Altera trash de 0 para 1 para o fornecedor do pedido de cotação
+   */
+  async trashFornecedor(pedido_cotacao: number, for_codigo: number) {
+    
+
+    return this.repository.trashFornecedor(pedido_cotacao, for_codigo);
+  }
+
   private normalizeDto(dto: CreateFornecedorDto): CreateFornecedorDto {
     // Normaliza itens (quantidade e pro_codigo numéricos; ajuste se pro_codigo no banco for TEXT)
     const itens = (dto.itens ?? []).map((i) => {

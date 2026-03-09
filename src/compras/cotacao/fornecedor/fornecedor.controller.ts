@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Delete, Param } from '@nestjs/common';
 import { FornecedorService } from './fornecedor.service';
 import { CreateFornecedorDto } from './fornecedor.dto';
 import { 
@@ -63,5 +64,18 @@ export class FornecedorController {
     if (!Number.isFinite(n)) return { data: [], total: 0 };
     const data = await this.service.listarFornecedoresPorPedido(n);
     return { data, total: data.length };
+  }
+
+  /**
+   * DELETE /fornecedor/:pedido_cotacao/:for_codigo
+   * Altera trash de 0 para 1 para o fornecedor do pedido de cotação
+   */
+  @Delete(':pedido_cotacao/:for_codigo')
+  async deleteFornecedor(
+    @Param('pedido_cotacao') pedido_cotacao: number,
+    @Param('for_codigo') for_codigo: number
+  ) {
+    await this.service.trashFornecedor(pedido_cotacao, for_codigo);
+    return { success: true };
   }
 }

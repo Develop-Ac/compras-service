@@ -113,6 +113,7 @@ model com_cotacao_for {
   cpf_cnpj       String?
   created_at     DateTime                @default(now())
   updated_at     DateTime                @updatedAt
+  trash          Int?                    @default(0)
   itens          com_cotacao_itens_for[]
 
   @@unique([pedido_cotacao, for_codigo], name: "pedido_for")
