@@ -41,7 +41,7 @@ export class FornecedorRepository {
 
   async listarFornecedoresPorPedido(pedido_cotacao: number) {
     return this.prisma.com_cotacao_for.findMany({
-      where: { pedido_cotacao },
+      where: { pedido_cotacao, trash: 0 },
       select: {
         for_codigo: true,
         for_nome: true,
