@@ -13,8 +13,8 @@ export class FornecedorRepository {
   async trashFornecedor(pedido_cotacao: number, for_codigo: number) {
     return this.prisma.com_cotacao_for.updateMany({
       where: {
-        pedido_cotacao,
-        for_codigo,
+        pedido_cotacao: Number(pedido_cotacao),
+        for_codigo: Number(for_codigo),
         trash: 0,
       },
       data: {
