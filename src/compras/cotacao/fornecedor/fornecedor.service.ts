@@ -27,8 +27,8 @@ export class FornecedorService {
       const { data, status } = await firstValueFrom(
         this.http.delete(url, {
           data: {
-            pedido_cotacao,
-            for_codigo,
+            pedido_cotacao: Number(pedido_cotacao),
+            for_codigo: Number(for_codigo),
           },
         }),
       );
