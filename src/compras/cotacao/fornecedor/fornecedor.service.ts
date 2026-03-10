@@ -21,21 +21,15 @@ export class FornecedorService {
    */
   async trashFornecedor(pedido_cotacao: number, for_codigo: number) {
     const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
-    const apiKey = this.config.get<string>('NEXT_API_KEY', '');
     const url = new URL('/api/cotacao', base).toString();
 
     try {
       const { data, status } = await firstValueFrom(
         this.http.delete(url, {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-          },
           data: {
             pedido_cotacao,
             for_codigo,
           },
-          validateStatus: (s) => s < 500,
         }),
       );
 
