@@ -20,7 +20,40 @@ export class FornecedorService {
    * Altera trash de 0 para 1 para o fornecedor do pedido de cotação
    */
   async trashFornecedor(pedido_cotacao: number, for_codigo: number) {
-    
+    const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
+    const apiKey = this.config.get<string>('NEXT_API_KEY', '');
+    const url = new URL('/api/cotacao', base).toString();
+
+    try {
+      const { data, status } = await firstValueFrom(
+        this.http.delete(url, {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+          },
+          data: {
+            pedido_cotacao,
+            for_codigo,
+          },
+          validateStatus: (s) => s < 500,
+        }),
+      );
+
+      if (status >= 400) {
+        throw new HttpException(data?.error || 'Falha ao deletar no Next', status);
+      }
+    } catch (err) {
+      const e = err as AxiosError<any>;
+      const status = e.response?.status ?? 500;
+      const details = e.response?.data ?? e.message ?? 'Erro ao deletar no Next';
+      this.logger.error(
+        `DELETE ${url} falhou: ${typeof details === 'string' ? details : JSON.stringify(details)}`,
+      );
+      throw new HttpException(
+        { error: 'Next falhou ao deletar fornecedor', details },
+        status,
+      );
+    }
 
     return this.repository.trashFornecedor(pedido_cotacao, for_codigo);
   }
