@@ -72,7 +72,7 @@ export class CotacaoSyncRepository {
 
   async listFornecedoresLocal(pedido_cotacao: number) {
     return this.prisma.com_cotacao_for.findMany({
-      where: { pedido_cotacao },
+      where: { pedido_cotacao, trash: 0 },
       include: { itens: true },
       orderBy: [{ for_codigo: 'asc' }],
     });
