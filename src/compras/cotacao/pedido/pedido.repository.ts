@@ -24,7 +24,14 @@ export class PedidoRepository {
   async findByIdWithItens(id: string) {
     return this.prisma.com_pedido.findUnique({
       where: { id },
-      include: { itens: true },
+      include: {
+        itens: {
+          where: {
+            renato: true,
+            carlos: true,
+          },
+        },
+      },
     });
   }
 
