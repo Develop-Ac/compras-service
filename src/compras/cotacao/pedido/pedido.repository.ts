@@ -97,7 +97,7 @@ export class PedidoRepository {
     const pedidosWithItens = await Promise.all(
       pedidos.map(async (pedido) => {
         const itens = await this.prisma.com_pedido_itens.findMany({
-          where: { pedido_id: pedido.id },
+          where: { pedido_id: pedido.id, renato: true, carlos: true },
         });
         // Formata valor_unitario para padrão brasileiro
         const itensFormatados = itens.map((item) => ({
