@@ -671,7 +671,7 @@ export class PedidoService {
     check: boolean
   ) {
     // Primeiro verifica se o item pertence ao pedido
-    const item = await this.repo.findByIdWithItens(pedidoId);
+    const item = await this.repo.findByIdWithItensToAutorizar(pedidoId);
     if (!item) {
       throw new NotFoundException('Pedido não encontrado');
     }

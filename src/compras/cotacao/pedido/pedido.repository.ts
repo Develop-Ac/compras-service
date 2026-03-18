@@ -35,6 +35,15 @@ export class PedidoRepository {
     });
   }
 
+  async findByIdWithItensToAutorizar(id: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id },
+      include: {
+        itens: true
+      },
+    });
+  }
+
   /** Busca um pedido por id com todos os dados (para gerencial) */
   async findByIdGerencial(id: string) {
     return this.prisma.com_pedido.findUnique({
