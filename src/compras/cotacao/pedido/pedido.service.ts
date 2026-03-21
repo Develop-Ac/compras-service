@@ -404,9 +404,9 @@ export class PedidoService {
 
     // 1) Larguras base tipadas como literais
     const W = {
-      ref: 110, // <<<<<<<< Aumentado para caber "1JE82359301C"
+      ref: 120, // <<<<<<<< Aumentado para caber "5U0805584C1NN"
       pro_codigo: 50,
-      descricao: showMarca ? 260 : 320, // <<<<<<<< Diminuído
+      descricao: showMarca ? 250 : 310, // <<<<<<<< Diminuído
       marca: 60,
       un: 20,
       qtd: 25,
