@@ -404,9 +404,9 @@ export class PedidoService {
 
     // 1) Larguras base tipadas como literais
     const W = {
-      ref: 70,
-      pro_codigo: 50, // <<<<<<<< NOVO: largura para pro_codigo
-      descricao: 300,
+      ref: 110, // <<<<<<<< Aumentado para caber "1JE82359301C"
+      pro_codigo: 50,
+      descricao: showMarca ? 260 : 320, // <<<<<<<< Diminuído
       marca: 60,
       un: 20,
       qtd: 25,
@@ -424,7 +424,7 @@ export class PedidoService {
     // 3) Monte as colunas sem spread condicional (evita widening para string)
     const cols: ColumnSpec[] = [
       { key: 'ref', width: W.ref, align: 'left' },
-      { key: 'pro_codigo', width: W.pro_codigo, align: 'left' }, // <<<<<<<< NOVO: coluna pro_codigo
+      { key: 'pro_codigo', width: W.pro_codigo, align: 'left' },
       { key: 'descricao', width: descricaoWidth, align: 'left' },
     ];
 
@@ -442,7 +442,7 @@ export class PedidoService {
     // 4) Map de headers tipado
     const headerMap: Record<ColumnKey, string> = {
       ref: 'Ref',
-      pro_codigo: 'Código', // <<<<<<<< NOVO: header para pro_codigo
+      pro_codigo: 'Código',
       descricao: 'Descrição',
       marca: 'Marca',
       un: 'Un',
@@ -531,7 +531,7 @@ export class PedidoService {
       // Valores crus
       const values: Record<ColumnKey, string> = {
         ref: (it.referencia ?? '').toString(),
-        pro_codigo: (it.pro_codigo ?? '').toString(), // <<<<<<<< NOVO: valor pro_codigo
+        pro_codigo: (it.pro_codigo ?? '').toString(),
         descricao: (it.pro_descricao ?? '').toString(),
         marca: (it.mar_descricao ?? '').toString(),
         un: (it.unidade ?? '').toString(),

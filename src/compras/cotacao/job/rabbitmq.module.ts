@@ -1,14 +1,17 @@
-// src/rabbitmq/rabbitmq.module.ts
 import { Module } from '@nestjs/common';
 import { RabbitMqConsumerService } from './rabbitmq-consumer.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { CotacaoRepository } from '../cotacao.repository';
+import { OpenQueryModule } from 'src/shared/database/openquery/openquery.module'; // adicionado
 
 @Module({
-  imports: [PrismaModule], // para o PedidoRepository ter o PrismaService
+  imports: [
+    PrismaModule,
+    OpenQueryModule, // adicionado
+  ],
   providers: [
     RabbitMqConsumerService,
-    CotacaoRepository,      // <<< AQUI é o ponto chave
+    CotacaoRepository,
   ],
 })
 export class RabbitMqModule {}

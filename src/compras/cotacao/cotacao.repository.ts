@@ -3,10 +3,79 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { OpenQueryService } from 'src/shared/database/openquery/openquery.service';
 
 @Injectable()
 export class CotacaoRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mssql: OpenQueryService
+  ) {}
+
+  /** Escapa aspas simples para o literal T-SQL do OPENQUERY */
+  private fbLiteral(sql: string) {
+    return sql.replace(/'/g, "''");
+  }
+
+  async getInfoItens(pro_codigo: number) {
+    const fbSql = `
+      SELECT *
+      FROM produtos pro
+      WHERE pro.pro_codigo = ${pro_codigo}
+    `;
+
+    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
+
+    try {
+      const rows = await this.mssql.query<any>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
+      const item = rows.find(row => String(row.PRO_CODIGO) === String(pro_codigo));
+      console.log(item);
+      return {
+        PRO_CODIGO: item?.PRO_CODIGO,
+        PRO_DESCRICAO: item?.PRO_DESCRICAO,
+        MAR_DESCRICAO: item?.MAR_DESCRICAO,
+        UNIDADE: item?.UNIDADE,
+        REFERENCIA: item?.REFERENCIA,
+      }
+    } catch (error) {
+      console.error('Erro ao consultar informações do item:', error);
+      return {
+        PRO_CODIGO: null,
+        PRO_DESCRICAO: null,
+        MAR_DESCRICAO: null,
+        UNIDADE: null,
+        REFERENCIA: null,
+      }
+    }
+  }
+
+  async insertNewItemCotacao(
+    PRO_CODIGO: number,
+    PRO_DESCRICAO: string,
+    MAR_DESCRICAO: string | null,
+    UNIDADE: string | null,
+    REFERENCIA: string | null,
+    pedido_cotacao: string,
+    quantidade: number,
+  ) {
+
+    // Verifica se a cotação existe antes de inserir o item
+    const cotacao = await this.prisma.com_cotacao.findUnique({
+      where: { pedido_cotacao: Number(pedido_cotacao) },
+    });
+
+    return this.prisma.com_cotacao_itens.create({
+      data: {
+        pro_codigo: PRO_CODIGO,
+        pro_descricao: PRO_DESCRICAO,
+        mar_descricao: MAR_DESCRICAO,
+        unidade: UNIDADE,
+        referencia: REFERENCIA,
+        quantidade: quantidade,
+        com_cotacao: { connect: { id: String(cotacao?.id) } },
+      }
+    });
+  }
 
   async upsertCotacaoWithItems(
     empresa: number,

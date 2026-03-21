@@ -10,13 +10,45 @@ import {
   ApiParam, 
   ApiOkResponse, 
   ApiCreatedResponse,
-  ApiBadRequestResponse 
+  ApiBadRequestResponse, 
+  ApiBody
 } from '@nestjs/swagger';
 
 @ApiTags('Compras - Pedidos de Cotação')
 @Controller('pedidos-cotacao')
 export class CotacaoController {
   constructor(private service: CotacaoService) {}
+  // POST /compras/pedidos-cotacao/item
+  @Post('item')
+  @ApiOperation({
+    summary: 'Cria ou atualiza item de cotação',
+    description: 'Recebe dados de cotação e código do produto para criar ou atualizar um item específico da cotação.'
+  })
+  @ApiCreatedResponse({
+    description: 'Item de cotação criado/atualizado com sucesso'
+  })
+  @ApiBadRequestResponse({
+    description: 'Dados inválidos fornecidos',
+    example: { statusCode: 400, message: 'Validation failed', error: 'Bad Request' }
+  })
+  @ApiBody({
+    description: 'Dados para criar ou atualizar item de cotação',
+    required: true,
+    schema: {
+      type: 'object',
+      properties: {
+        cotacao: { type: 'number', example: 1234 },
+        pro_codigo: { type: 'number', example: 5678 },
+        quantidade: { type: 'number', example: 10 },
+      },
+      required: ['cotacao', 'pro_codigo', 'quantidade']
+    }
+  })
+  async upsertCotacaoItem(
+    @Body() body: { cotacao: string, pro_codigo: number, quantidade: number }
+  ) {
+    return this.service.upsertCotacaoItem(body.cotacao, body.pro_codigo, body.quantidade  );
+  }
 
     /**
    * GET /compras/pedidos-cotacao/:pedido/itens?empresa=3

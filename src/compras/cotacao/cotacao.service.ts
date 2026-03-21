@@ -15,6 +15,21 @@ type ListAllParams = {
 export class CotacaoService {
   constructor(private readonly repo: CotacaoRepository) {}
 
+  async upsertCotacaoItem(cotacao: string, pro_codigo: number, quantidade: number) {
+    const { PRO_CODIGO,PRO_DESCRICAO, MAR_DESCRICAO, UNIDADE, REFERENCIA} = await this.repo.getInfoItens(pro_codigo);
+
+    await this.repo.insertNewItemCotacao(
+      PRO_CODIGO,
+      PRO_DESCRICAO,
+      MAR_DESCRICAO,
+      UNIDADE,
+      REFERENCIA,
+      cotacao,
+      quantidade, // quantidade fornecida
+    );
+    return { ok: true, cotacao, pro_codigo };
+  }
+
     /**
    * Retorna cotação customizada (empresa, pedido_cotacao, total_itens, itens)
    */
