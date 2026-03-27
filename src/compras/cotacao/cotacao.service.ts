@@ -27,7 +27,7 @@ export class CotacaoService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        PRO_CODIGO,
+        PRO_CODIGO: String(PRO_CODIGO),
         PRO_DESCRICAO,
         MAR_DESCRICAO,
         UNIDADE,
