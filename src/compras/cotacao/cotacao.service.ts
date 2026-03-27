@@ -3,6 +3,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CotacaoRepository } from './cotacao.repository';
 import { CreateCotacaoDto } from './cotacao.dto';
+import { ConfigService } from '@nestjs/config';
 
 type ListAllParams = {
   empresa?: number;
@@ -13,10 +14,28 @@ type ListAllParams = {
 
 @Injectable()
 export class CotacaoService {
-  constructor(private readonly repo: CotacaoRepository) {}
+  constructor(private readonly repo: CotacaoRepository,
+     private readonly config: ConfigService,
+  ) {}
 
   async upsertCotacaoItem(cotacao: string, pro_codigo: number, quantidade: number) {
     const { PRO_CODIGO,PRO_DESCRICAO, MAR_DESCRICAO, UNIDADE, REFERENCIA} = await this.repo.getInfoItens(pro_codigo);
+    
+    const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
+
+    await fetch(`${base}/api/cotacao/itens`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        PRO_CODIGO,
+        PRO_DESCRICAO,
+        MAR_DESCRICAO,
+        UNIDADE,
+        REFERENCIA,
+        cotacao,
+        quantidade,
+      }),
+    });
 
     await this.repo.insertNewItemCotacao(
       PRO_CODIGO,
