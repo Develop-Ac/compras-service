@@ -23,7 +23,7 @@ export class CotacaoService {
     
     const base = this.config.get<string>('NEXT_BASE_URL', 'http://127.0.0.1:3002');
 
-    await fetch(`${base}/api/cotacao/itens`, {
+    await fetch(`${base}/itens`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
