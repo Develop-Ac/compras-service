@@ -74,7 +74,7 @@ export class PedidoService {
    * Busca pedido e itens por id (para sincronização)
    */
   async buscarPedidoSincronizacao(id: string) {
-    const pedido = await this.repo.findByIdWithAll(id);
+    const pedido = await this.repo.findByIdWithAllForSincronizacao(id);
     if (!pedido) throw new NotFoundException('Pedido não encontrado');
     return pedido;
   }
