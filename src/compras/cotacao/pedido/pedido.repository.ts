@@ -56,6 +56,22 @@ export class PedidoRepository {
     });
   }
 
+  async getMinMax(pro_codigo: number): Promise<{ min: number | null; max: number | null }> {
+    const result = await this.prisma.com_fifo_completo.findFirst({
+      where: { pro_codigo: String(pro_codigo) },
+      select: {
+        estoque_min_sugerido: true,
+        estoque_max_sugerido: true,
+      },
+    });
+    if (!result) return { min: null, max: null };
+    // Ajuste os nomes dos campos conforme o seu schema
+    return {
+      min: result.estoque_min_sugerido ?? null,
+      max: result.estoque_max_sugerido ?? null,
+    };
+  }
+
   /**
    * Atualiza autorização de um item do pedido.
    * @param itemId ID do item

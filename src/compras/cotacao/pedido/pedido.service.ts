@@ -79,6 +79,10 @@ export class PedidoService {
     return pedido;
   }
 
+  async getMinMax(pro_codigo: number): Promise<{ min: number | null; max: number | null }> {
+    return this.repo.getMinMax(pro_codigo);
+  }
+
   /**
    * Busca pedido e itens completos por id (para gerencial)
    */
@@ -90,9 +94,13 @@ export class PedidoService {
         pedido.itens.map(async (item) => {
           const valores = await this.getValoresGerenciais(item.pro_codigo);
 
+          const { min, max } = await this.getMinMax(item.pro_codigo);
+
           return {
             ...item,
             ...valores,
+            min,
+            max,
             pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
           };
         })
