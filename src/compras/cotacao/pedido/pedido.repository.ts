@@ -25,12 +25,14 @@ export class PedidoRepository {
     return this.prisma.com_pedido.findUnique({
       where: { id },
       include: {
-        itens: {
-          where: {
-            renato: true,
-            carlos: true,
-          },
+      itens: {
+        where: {
+        OR: [
+          { renato: true },
+          { carlos: true },
+        ],
         },
+      },
       },
     });
   }
