@@ -34,6 +34,7 @@ model com_cotacao {
   pedido_cotacao    Int                 @unique
   indice            Int                 @unique(map: "com_cotacao_indice_unique") @default(autoincrement())
   created_at        DateTime?           @default(now()) @db.Timestamp(6)
+  dias_compra       Decimal?            @db.Decimal(10, 2)
   com_cotacao_itens com_cotacao_itens[]
 }
 
@@ -72,6 +73,7 @@ model ofi_checklists {
   assinaturasclienteBase64     String?
   assinaturasresponsavelBase64 String?
   ofi_checklists_avarias       ofi_checklists_avarias[]
+  ofi_checklists_fotos         ofi_checklists_fotos[]
   ofi_checklists_items         ofi_checklists_items[]
 }
 
@@ -356,20 +358,23 @@ model com_metricas_fifo {
 }
 
 model com_nfe_conciliacao {
-  chave_nfe          String   @id
-  emitente           String
-  cnpj_emitente      String?
-  data_emissao       DateTime
-  valor_total        Float
-  xml_completo       String?
-  status_analise     String   @default("Tributado - Verificado")
-  valor_guia         Float    @default(0.0)
-  status_erp         String   @default("PENDENTE")
-  updated_at         DateTime
-  created_at         DateTime @default(now())
-  tipo_operacao      Int      @default(0)
-  tipo_operacao_desc String   @default("ENTRADA PRÓPRIA")
-  tipo_imposto       String?  @db.VarChar(50)
+  chave_nfe                String                     @id
+  emitente                 String
+  cnpj_emitente            String?
+  data_emissao             DateTime
+  valor_total              Float
+  xml_completo             String?
+  status_analise           String                     @default("Tributado - Verificado")
+  valor_guia               Float                      @default(0.0)
+  status_erp               String                     @default("PENDENTE")
+  updated_at               DateTime
+  created_at               DateTime                   @default(now())
+  tipo_operacao            Int                        @default(0)
+  tipo_operacao_desc       String                     @default("ENTRADA PRÓPRIA")
+  tipo_imposto             String?                    @db.VarChar(50)
+  compra_comercializacao   Boolean                    @default(false)
+  uso_consumo              Boolean                    @default(false)
+  com_nfe_conciliacao_item com_nfe_conciliacao_item[]
 }
 
 model com_pagamento_guia {
@@ -449,19 +454,19 @@ model eco_produtos_carros_erro {
 }
 
 model est_auditoria {
-  id                   String       @id
+  id                   String        @id
   contagem_cuid        String
-  data_auditoria       DateTime     @default(now())
+  data_auditoria       DateTime      @default(now())
   cod_produto          Int
   diferenca_apontada   Int
-  status               Int          @default(0)
+  status               Int           @default(0)
   observacao           String?
-  usuario_id           String
-  created_at           DateTime     @default(now())
+  usuario_id           String?
+  created_at           DateTime      @default(now())
   updated_at           DateTime
   quantidade_movimento Int?
-  tipo_movimento       String?      @db.VarChar(20)
-  sis_usuarios         sis_usuarios @relation(fields: [usuario_id], references: [id])
+  tipo_movimento       String?       @db.VarChar(20)
+  sis_usuarios         sis_usuarios? @relation(fields: [usuario_id], references: [id], onDelete: Restrict)
 
   @@index([cod_produto])
   @@index([contagem_cuid])
@@ -529,55 +534,23 @@ model gar_anexos_garantias {
 }
 
 model gar_caixa_de_entrada_emails {
-  id               Int            @id @default(autoincrement())
-  message_id       String         @unique
+  id               Int                @id @default(autoincrement())
+  message_id       String             @unique
   garantia_id      Int?
   remetente        String?
   assunto          String?
   corpo_html       String?
-  data_recebimento DateTime?      @db.Timestamptz(6)
-  foi_processado   Boolean?       @default(false)
+  data_recebimento DateTime?          @db.Timestamptz(6)
+  foi_processado   Boolean?           @default(false)
   reply_to         String?
-  to_list          String[]       @default([])
-  cc_list          String[]       @default([])
-  bcc_list         String[]       @default([])
-  attachments      Json?          @default("[]")
-  gar_garantias    gar_garantias? @relation(fields: [garantia_id], references: [id], onUpdate: NoAction)
+  to_list          String[]           @default([])
+  cc_list          String[]           @default([])
+  bcc_list         String[]           @default([])
+  attachments      Json?              @default("[]")
+  gar_anexos_email gar_anexos_email[]
+  gar_garantias    gar_garantias?     @relation(fields: [garantia_id], references: [id], onUpdate: NoAction)
 
   @@index([garantia_id], map: "gar_idx_caixa_entrada_garantia_id")
-}
-
-model gar_email_attachments {
-  id             BigInt      @id @default(autoincrement())
-  email_id       BigInt?
-  filename       String?
-  mime_type      String?
-  size_bytes     BigInt?
-  content_id     String?
-  content_base64 String?
-  gar_emails     gar_emails? @relation(fields: [email_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-model gar_emails {
-  id                    BigInt                  @id @default(autoincrement())
-  message_id            String?                 @unique
-  remetente             String?
-  assunto               String?
-  corpo_html            String?
-  data_recebimento      DateTime?               @db.Timestamptz(6)
-  reply_to              String?
-  to_list               Json?
-  cc_list               Json?
-  bcc_list              Json?
-  controle_interno      String?
-  nota_interna          String?
-  garantia_id           Int?
-  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
-  gar_email_attachments gar_email_attachments[]
-  gar_garantias         gar_garantias?          @relation(fields: [garantia_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([garantia_id], map: "gar_idx_emails_garantia_id")
-  @@index([nota_interna], map: "gar_idx_emails_nota_interna")
 }
 
 model gar_fornecedores_config {
@@ -622,9 +595,9 @@ model gar_garantias {
   valor_credito_total         Decimal?                      @db.Decimal(12, 2)
   valor_credito_utilizado     Decimal                       @default(0) @db.Decimal(12, 2)
   status                      Int                           @default(1)
+  gar_anexos_email            gar_anexos_email[]
   gar_anexos_garantias        gar_anexos_garantias[]
   gar_caixa_de_entrada_emails gar_caixa_de_entrada_emails[]
-  gar_emails                  gar_emails[]
   gar_garantias_abatimentos   gar_garantias_abatimentos[]
   gar_historico_garantias     gar_historico_garantias[]
 }
@@ -731,4 +704,84 @@ model sis_log {
   acao       String    @db.VarChar(100)
   descricao  String
   created_at DateTime? @default(now()) @db.Timestamp(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model com_nfe_conciliacao_item {
+  id                    BigInt              @id @default(autoincrement())
+  chave_nfe             String              @db.VarChar(44)
+  n_item                Int
+  cod_prod_fornecedor   String
+  for_codigo            String?
+  pro_codigo            String?
+  destinacao_mercadoria String              @db.VarChar(20)
+  imposto_escolhido     String              @db.VarChar(20)
+  possui_icms_st        Boolean             @default(false)
+  possui_difal          Boolean             @default(false)
+  ncm_xml               String?
+  cst_nota              String?
+  divergencias_json     Json                @default("[]")
+  status_conferencia    String              @default("OK") @db.VarChar(20)
+  created_at            DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime            @default(now()) @db.Timestamptz(6)
+  sem_tributacao        Boolean?            @default(false)
+  com_nfe_conciliacao   com_nfe_conciliacao @relation(fields: [chave_nfe], references: [chave_nfe], onDelete: Cascade, onUpdate: NoAction, map: "fk_conciliacao_item_nfe")
+
+  @@unique([chave_nfe, n_item], map: "uq_conciliacao_item")
+  @@index([chave_nfe], map: "idx_conciliacao_item_chave_nfe")
+  @@index([for_codigo], map: "idx_conciliacao_item_for_codigo")
+  @@index([pro_codigo], map: "idx_conciliacao_item_pro_codigo")
+  @@index([status_conferencia], map: "idx_conciliacao_item_status")
+}
+
+model com_nfe_guia_pdf {
+  chave_nfe          String    @id @db.VarChar(44)
+  bucket_name        String    @db.VarChar(120)
+  object_path        String
+  original_file_name String
+  numero_documento   String?   @db.VarChar(120)
+  data_vencimento    DateTime? @db.Date
+  valor              Decimal?  @db.Decimal(15, 2)
+  fe_cte             String?   @db.VarChar(40)
+  numero_nf_extraido String?   @db.VarChar(20)
+  fe_cte_confere     Boolean?
+  aviso              String?
+  uploaded_at        DateTime  @default(now()) @db.Timestamp(6)
+  updated_at         DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([fe_cte], map: "idx_com_nfe_guia_pdf_fe_cte")
+  @@index([uploaded_at(sort: Desc)], map: "idx_com_nfe_guia_pdf_uploaded_at")
+}
+
+model gar_anexos_email {
+  id                          BigInt                      @id @default(autoincrement())
+  email_id                    Int
+  garantia_id                 Int?
+  nome_ficheiro               String                      @db.VarChar(255)
+  path_ficheiro               String                      @db.VarChar(1024)
+  data_upload                 DateTime                    @default(now()) @db.Timestamptz(6)
+  content_id                  String?                     @db.VarChar(255)
+  mime_type                   String?
+  size_bytes                  BigInt?
+  is_inline                   Boolean?                    @default(false)
+  storage_bucket              String?
+  storage_key                 String?
+  gar_caixa_de_entrada_emails gar_caixa_de_entrada_emails @relation(fields: [email_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  gar_garantias               gar_garantias?              @relation(fields: [garantia_id], references: [id], onUpdate: NoAction)
+
+  @@unique([email_id, path_ficheiro], map: "gar_uq_anexos_email_email_path")
+  @@index([content_id], map: "gar_idx_anexos_email_content_id")
+  @@index([email_id], map: "gar_idx_anexos_email_email_id")
+  @@index([garantia_id], map: "gar_idx_anexos_email_garantia_id")
+  @@index([path_ficheiro], map: "gar_idx_anexos_email_path_ficheiro")
+}
+
+model ofi_checklists_fotos {
+  id             String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  checklist_id   String
+  foto           String?
+  timestamp      DateTime       @default(now()) @db.Timestamp(6)
+  ofi_checklists ofi_checklists @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ofi_checklists")
+
+  @@index([checklist_id], map: "idx_ofi_checklists_fotos_checklist_id")
 }

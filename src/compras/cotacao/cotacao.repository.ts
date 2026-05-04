@@ -80,6 +80,7 @@ export class CotacaoRepository {
   async upsertCotacaoWithItems(
     empresa: number,
     pedido_cotacao: number,
+    dias_compra: number,
     itensLower: Array<{
       pedido_cotacao: number;
       emissao: Date | null;
@@ -96,8 +97,8 @@ export class CotacaoRepository {
     await this.prisma.$transaction(async (tx) => {
       await tx.com_cotacao.upsert({
         where: { pedido_cotacao },
-        create: { empresa, pedido_cotacao },
-        update: { empresa },
+        create: { empresa, pedido_cotacao, dias_compra },
+        update: { empresa, dias_compra },
       });
 
       await tx.com_cotacao_itens.deleteMany({ where: { pedido_cotacao } });

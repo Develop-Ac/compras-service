@@ -86,7 +86,7 @@ export class CotacaoService {
   }
 
   async upsertCotacao(dto: CreateCotacaoDto) {
-    const { empresa, pedido_cotacao, itens } = dto;
+    const { empresa, pedido_cotacao, dias_compra, itens } = dto;
 
     const itensLower = (itens || []).map((i) => ({
       pedido_cotacao: i.PEDIDO_COTACAO,
@@ -101,7 +101,7 @@ export class CotacaoService {
       dt_ultima_compra: i.DT_ULTIMA_COMPRA ? new Date(i.DT_ULTIMA_COMPRA) : null,
     }));
 
-    await this.repo.upsertCotacaoWithItems(empresa, pedido_cotacao, itensLower);
+    await this.repo.upsertCotacaoWithItems(empresa, pedido_cotacao, dias_compra, itensLower);
 
     await fetch('http://log-service.acacessorios.local/log', {
       method: 'POST',
