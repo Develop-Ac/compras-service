@@ -146,6 +146,9 @@ model com_pedido {
   for_codigo     Int
   created_at     DateTime           @default(now())
   updated_at     DateTime           @updatedAt
+  frete          Decimal?           @db.Decimal(10, 2)
+  prazo          String?            @db.VarChar(100)
+  nomeFrete      String?            @db.VarChar(255)
   itens          com_pedido_itens[]
 
   @@unique([pedido_cotacao, for_codigo])

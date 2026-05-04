@@ -594,11 +594,25 @@ export class PedidoService {
       'https://intranetbackend.acacessorios.local/compras';
 
     // Agrupa por fornecedor
+    // Agrupa itens por fornecedor e armazena o frete de cada grupo (primeiro frete encontrado para o fornecedor)
     const byFor: Record<number, typeof itens> = {};
+    const freteByFor: Record<number, number> = {};
+    const prazoByFor: Record<string, string> = {};
+    const nomeFreteByFor: Record<string, string> = {};
     for (const it of itens) {
       const f = Number(it.for_codigo);
       if (!Number.isFinite(f)) continue;
       (byFor[f] ??= []).push(it);
+      // Salva o frete do primeiro item do fornecedor (ou sobrescreva se quiser o último)
+      if (freteByFor[f] === undefined && 'frete' in it) {
+      freteByFor[f] = typeof it.frete === 'number' ? it.frete : Number(it.frete);
+      }
+      if (prazoByFor[f] === undefined && 'prazo' in it) {
+      prazoByFor[f] = typeof it.prazo === 'string' ? it.prazo : String(it.prazo);
+      }
+      if (nomeFreteByFor[f] === undefined && 'nomeFrete' in it) {
+      nomeFreteByFor[f] = typeof it.nomeFrete === 'string' ? it.nomeFrete : String(it.nomeFrete);
+      }
     }
 
     const result = await this.repo.transaction(async (tx) => {
@@ -613,6 +627,9 @@ export class PedidoService {
           tx,
           pedido_cotacao,
           for_codigo,
+          freteByFor[for_codigo],
+          prazoByFor[for_codigo],
+          nomeFreteByFor[for_codigo]
         );
 
         // Limpa itens e recria

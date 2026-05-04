@@ -36,5 +36,14 @@ export class PedidoItemDto {
   for_codigo!: number;
 
   @IsNumber()
+  frete!: number;
+
+  @IsString()
+  prazo!: string;
+
+  @IsString()
+  nomeFrete!: string;
+
+  @IsNumber()
   quantidade!: number;
 }
