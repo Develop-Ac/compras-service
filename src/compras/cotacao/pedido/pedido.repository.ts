@@ -46,7 +46,7 @@ export class PedidoRepository {
 
   /** Busca um pedido por id com todos os dados (para gerencial) */
   async findByIdGerencial(id: string) {
-    const pedido = this.prisma.com_pedido.findUnique({
+    const pedido = await this.prisma.com_pedido.findUnique({
       where: { id },
       include: { 
         itens: {
@@ -55,8 +55,10 @@ export class PedidoRepository {
       },
     });
 
+    if (!pedido) return null;
+
     const dias_compra = await this.prisma.com_cotacao.findFirst({
-      where: { pedido_cotacao: Number(id) },
+      where: { pedido_cotacao: pedido.pedido_cotacao },
       select: { dias_compra: true },
     });
 
