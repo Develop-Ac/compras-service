@@ -5,6 +5,7 @@ import { Body, Controller, Get, Param, Post, Put, Query, Res } from '@nestjs/com
 import { PedidoService } from './pedido.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
+import { TransportadoraDto } from './dto/transportadora.dto';
 import express from 'express';
 import type { Response as ExpressResponse } from 'express';
 import { 
@@ -143,6 +144,25 @@ export class PedidoController {
   }
 
 
+  @Post('transportadora/:id')
+  @ApiOperation({
+    summary: 'Atualiza transportadora do pedido',
+    description: 'Atualiza o nome do frete e o valor do frete de um pedido'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido',
+    example: 'cm123abc'
+  })
+  @ApiOkResponse({ description: 'Transportadora atualizada com sucesso' })
+  @ApiBadRequestResponse({ description: 'Dados inválidos fornecidos' })
+  async updateTransportadora(
+    @Param('id') id: string,
+    @Body() body: TransportadoraDto,
+  ) {
+    return this.service.atualizarTransportadora(id, body.nomeFrete, body.frete);
+  }
+
   @Post()
   @ApiOperation({ 
     summary: 'Cria ou atualiza pedido',
@@ -157,4 +177,6 @@ export class PedidoController {
   async create(@Body() body: CreatePedidoDto) {
     return this.service.createOrReplace(body);
   }
+
+
 }

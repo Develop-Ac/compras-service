@@ -133,6 +133,14 @@ export class PedidoRepository {
     return this.prisma.$transaction(fn);
   }
 
+  /** Atualiza transportadora (nomeFrete e frete) de um pedido */
+  async updateTransportadora(id: string, nomeFrete: string, frete: number) {
+    return this.prisma.com_pedido.update({
+      where: { id },
+      data: { nomeFrete, frete },
+    });
+  }
+
   /** Busca um pedido e seus itens por id (para sincronização) */
   async findByIdWithAllForSincronizacao(id: string) {
     const pedidos = await this.prisma.com_pedido.findMany({

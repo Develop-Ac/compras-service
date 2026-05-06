@@ -686,6 +686,12 @@ export class PedidoService {
     };
   }
 
+  /** Atualiza transportadora (nomeFrete e frete) de um pedido */
+  async atualizarTransportadora(id: string, nomeFrete: string, frete: number) {
+    const pedido = await this.repo.updateTransportadora(id, nomeFrete, frete);
+    return { ok: true, pedido };
+  }
+
   /** Atualiza autorização de um item do pedido */
   async atualizarAutorizacaoItem(
     pedidoId: string, 
