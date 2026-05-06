@@ -177,6 +177,4 @@ export class PedidoController {
   async create(@Body() body: CreatePedidoDto) {
     return this.service.createOrReplace(body);
   }
-
-
 }

@@ -650,6 +650,7 @@ export class PedidoService {
             i.preco_custo != null ? new Prisma.Decimal(i.preco_custo) : null,
           for_codigo,
           quantidade: new Prisma.Decimal(i.quantidade as any),
+          justificativa: i.justificativa ?? null,
         }));
 
         await this.repo.createManyItens(tx, data);
