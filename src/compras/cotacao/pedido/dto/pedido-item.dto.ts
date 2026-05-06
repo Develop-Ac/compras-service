@@ -46,4 +46,7 @@ export class PedidoItemDto {
 
   @IsNumber()
   quantidade!: number;
+
+  @IsString()
+  justificativa?: string | null;
 }
