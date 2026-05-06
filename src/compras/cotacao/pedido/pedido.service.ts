@@ -627,9 +627,7 @@ export class PedidoService {
           tx,
           pedido_cotacao,
           for_codigo,
-          freteByFor[for_codigo],
           prazoByFor[for_codigo],
-          nomeFreteByFor[for_codigo]
         );
 
         // Limpa itens e recria

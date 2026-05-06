@@ -108,13 +108,11 @@ export class PedidoRepository {
     tx: Tx,
     pedido_cotacao: number,
     for_codigo: number,
-    frete: number,
     prazo: string,
-    nomeFrete: string,
   ) {
     return tx.com_pedido.upsert({
       where: { pedido_cotacao_for_codigo: { pedido_cotacao, for_codigo } },
-      create: { pedido_cotacao, for_codigo, frete, prazo, nomeFrete },
+      create: { pedido_cotacao, for_codigo, prazo },
       update: {  },
     });
   }
