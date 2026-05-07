@@ -112,7 +112,7 @@ export class CotacaoRepository {
   getCotacaoHeader(pedido: number) {
     return this.prisma.com_cotacao.findUnique({
       where: { pedido_cotacao: pedido },
-      select: { empresa: true, pedido_cotacao: true },
+      select: { empresa: true, pedido_cotacao: true, dias_compra: true },
     });
   }
 

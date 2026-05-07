@@ -5,6 +5,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 
 type Tx = PrismaService | Prisma.TransactionClient;
 
+type PedidoItemFaixaRow = {
+  id: string;
+  qtd_sugerida_min: number | string | Prisma.Decimal | null;
+  qtd_sugerida_max: number | string | Prisma.Decimal | null;
+};
+
 @Injectable()
 export class PedidoRepository {
   constructor(private prisma: PrismaService) {}
@@ -59,12 +65,40 @@ export class PedidoRepository {
 
     if (!pedido) return null;
 
+    const faixasItens = await this.prisma.$queryRaw<PedidoItemFaixaRow[]>(Prisma.sql`
+      SELECT id, qtd_sugerida_min, qtd_sugerida_max
+      FROM com_pedido_itens
+      WHERE pedido_id = ${id}
+    `);
+
+    const faixaPorItemId = new Map(
+      faixasItens.map((item) => [
+        item.id,
+        {
+          qtd_sugerida_min:
+            item.qtd_sugerida_min === null ? null : Number(item.qtd_sugerida_min),
+          qtd_sugerida_max:
+            item.qtd_sugerida_max === null ? null : Number(item.qtd_sugerida_max),
+        },
+      ]),
+    );
+
     const dias_compra = await this.prisma.com_cotacao.findFirst({
       where: { pedido_cotacao: pedido.pedido_cotacao },
       select: { dias_compra: true },
     });
 
-    return { ...pedido, dias_compra: dias_compra?.dias_compra ?? null };
+    return {
+      ...pedido,
+      dias_compra: dias_compra?.dias_compra ?? null,
+      itens: pedido.itens.map((item) => ({
+        ...item,
+        ...(faixaPorItemId.get(item.id) ?? {
+          qtd_sugerida_min: null,
+          qtd_sugerida_max: null,
+        }),
+      })),
+    };
   }
 
   async getMinMax(pro_codigo: number): Promise<{ min: number | null; max: number | null }> {

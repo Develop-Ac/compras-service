@@ -76,6 +76,7 @@ export class CotacaoService {
     return {
       empresa: header.empresa,
       pedido_cotacao: header.pedido_cotacao,
+      dias_compra: header.dias_compra,
       total_itens: itensFormatados.length,
       itens: itensFormatados,
     };
@@ -142,6 +143,7 @@ export class CotacaoService {
     return {
       empresa: header.empresa,
       pedido_cotacao: header.pedido_cotacao,
+      dias_compra: header.dias_compra,
       total_itens: itensUpper.length,
       itens: itensUpper,
     };

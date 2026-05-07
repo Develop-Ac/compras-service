@@ -79,10 +79,6 @@ export class PedidoService {
     return pedido;
   }
 
-  async getMinMax(pro_codigo: number): Promise<{ min: number | null; max: number | null }> {
-    return this.repo.getMinMax(pro_codigo);
-  }
-
   /**
    * Busca pedido e itens completos por id (para gerencial)
    */
@@ -94,13 +90,11 @@ export class PedidoService {
         pedido.itens.map(async (item) => {
           const valores = await this.getValoresGerenciais(item.pro_codigo);
 
-          const { min, max } = await this.getMinMax(item.pro_codigo);
-
           return {
             ...item,
             ...valores,
-            min,
-            max,
+            min: (item as any).qtd_sugerida_min ?? null,
+            max: (item as any).qtd_sugerida_max ?? null,
             pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
           };
         })
@@ -654,6 +648,18 @@ export class PedidoService {
         }));
 
         await this.repo.createManyItens(tx, data);
+
+        for (const i of grupo) {
+          await tx.$executeRaw`
+            UPDATE com_pedido_itens
+            SET
+              qtd_sugerida_min = ${i.qtd_sugerida_min ?? null},
+              qtd_sugerida_max = ${i.qtd_sugerida_max ?? null}
+            WHERE pedido_id = ${pedido.id}
+              AND pro_codigo = ${Number(i.pro_codigo)}
+              AND for_codigo = ${for_codigo}
+          `;
+        }
 
         created.push({
           id: pedido.id,

@@ -47,6 +47,12 @@ export class PedidoItemDto {
   @IsNumber()
   quantidade!: number;
 
+  @IsOptional() @IsNumber()
+  qtd_sugerida_min?: number | null;
+
+  @IsOptional() @IsNumber()
+  qtd_sugerida_max?: number | null;
+
   @IsString()
   justificativa?: string | null;
 }
