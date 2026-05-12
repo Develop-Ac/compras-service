@@ -99,8 +99,6 @@ export class PedidoService {
 
           const itemFormatado = await this.cotacaoSyncService.fetchProdutosInfoOneShot([item.pro_codigo], 3);
 
-          console.log(itemFormatado);
-
           return {
             ...item,
             ...valores,
