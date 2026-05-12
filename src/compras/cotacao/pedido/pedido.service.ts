@@ -739,6 +739,22 @@ export class PedidoService {
     };
   }
 
+  async atualizarJustificativaItem(pedidoId: string, itemId: string, justificativa: string) {
+    const item = await this.repo.updateItemJustificativa(pedidoId, itemId, justificativa);
+
+    if (!item) {
+      throw new NotFoundException(
+        `Item ${itemId} não encontrado no pedido ${pedidoId}`,
+      );
+    }
+
+    return {
+      ok: true,
+      message: 'Justificativa atualizada com sucesso',
+      item,
+    };
+  }
+
   async atualizarQuantidadeItem(pedidoId: string, itemId: string, quantidade: number) {
     const item = await this.repo.updateItemQuantidade(pedidoId, itemId, quantidade);
 

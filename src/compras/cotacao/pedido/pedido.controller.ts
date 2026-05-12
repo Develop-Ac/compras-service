@@ -7,6 +7,7 @@ import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
 import { TransportadoraDto } from './dto/transportadora.dto';
 import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
+import { UpdateItemJustificativaDto } from './dto/update-item-justificativa.dto';
 import express from 'express';
 import type { Response as ExpressResponse } from 'express';
 import { 
@@ -181,6 +182,25 @@ export class PedidoController {
     @Body() body: UpdateItemQuantidadeDto,
   ) {
     return this.service.atualizarQuantidadeItem(pedidoId, body.id, body.quantidade);
+  }
+
+  @Put('justificativa/:id')
+  @ApiOperation({
+    summary: 'Atualiza justificativa de item do pedido',
+    description: 'Atualiza a justificativa de um item específico de um pedido',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido (pedido_id)',
+    example: 'cm123abc',
+  })
+  @ApiOkResponse({ description: 'Justificativa atualizada com sucesso' })
+  @ApiBadRequestResponse({ description: 'Dados inválidos fornecidos' })
+  async updateItemJustificativa(
+    @Param('id') pedidoId: string,
+    @Body() body: UpdateItemJustificativaDto,
+  ) {
+    return this.service.atualizarJustificativaItem(pedidoId, body.id, body.justificativa);
   }
 
   @Post()
