@@ -726,4 +726,20 @@ export class PedidoService {
       item: itemAtualizado
     };
   }
+
+  async atualizarQuantidadeItem(pedidoId: string, itemId: string, quantidade: number) {
+    const item = await this.repo.updateItemQuantidade(pedidoId, itemId, quantidade);
+
+    if (!item) {
+      throw new NotFoundException(
+        `Item ${itemId} não encontrado no pedido ${pedidoId}`,
+      );
+    }
+
+    return {
+      ok: true,
+      message: 'Quantidade atualizada com sucesso',
+      item,
+    };
+  }
 }

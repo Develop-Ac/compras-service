@@ -6,6 +6,7 @@ import { PedidoService } from './pedido.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
 import { TransportadoraDto } from './dto/transportadora.dto';
+import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
 import express from 'express';
 import type { Response as ExpressResponse } from 'express';
 import { 
@@ -161,6 +162,25 @@ export class PedidoController {
     @Body() body: TransportadoraDto,
   ) {
     return this.service.atualizarTransportadora(id, body.nomeFrete, body.frete);
+  }
+
+  @Put('item/:id')
+  @ApiOperation({
+    summary: 'Atualiza quantidade de item do pedido',
+    description: 'Atualiza a quantidade de um item específico de um pedido',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido (pedido_id)',
+    example: 'cm123abc',
+  })
+  @ApiOkResponse({ description: 'Quantidade atualizada com sucesso' })
+  @ApiBadRequestResponse({ description: 'Dados inválidos fornecidos' })
+  async updateItemQuantidade(
+    @Param('id') pedidoId: string,
+    @Body() body: UpdateItemQuantidadeDto,
+  ) {
+    return this.service.atualizarQuantidadeItem(pedidoId, body.id, body.quantidade);
   }
 
   @Post()

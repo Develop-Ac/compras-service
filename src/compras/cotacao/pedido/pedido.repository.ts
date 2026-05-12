@@ -223,4 +223,17 @@ export class PedidoRepository {
     );
     return pedidosWithItens;
   }
+
+  /** Atualiza a quantidade de um item do pedido */
+  async updateItemQuantidade(pedidoId: string, itemId: string, quantidade: number) {
+    return this.prisma.com_pedido_itens.update({
+      where: {
+        id: itemId,
+        pedido_id: pedidoId,
+      },
+      data: {
+        quantidade,
+      },
+    });
+  }
 }
