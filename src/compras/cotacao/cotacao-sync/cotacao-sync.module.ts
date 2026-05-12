@@ -25,5 +25,6 @@ import { CotacaoSyncRepository } from './cotacao-sync.repository';
     PrismaService,
     CotacaoSyncRepository,
   ],
+  exports: [CotacaoSyncService],
 })
 export class CotacaoSyncModule {}

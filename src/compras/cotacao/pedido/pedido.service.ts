@@ -8,6 +8,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument = require('pdfkit');
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
+import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
+
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
+import * as sql from 'mssql';
 
 type FornecedorRow = {
   FOR_NOME: string | null;
@@ -28,6 +34,7 @@ export class PedidoService {
   constructor(
     private readonly repo: PedidoRepository,
     private readonly oq: OpenQueryService,
+    private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
   ) {}
 
   /* ----------------------- Utils ----------------------- */
@@ -87,8 +94,12 @@ export class PedidoService {
 
     if (pedido  !== null && pedido.itens  !== null) {
       pedido.itens = await Promise.all( 
-        pedido.itens.map(async (item) => {
+        pedido.itens.map(async (item) => { 
           const valores = await this.getValoresGerenciais(item.pro_codigo);
+
+          const itemFormatado = await this.cotacaoSyncService.fetchProdutosInfoOneShot([item.pro_codigo], 3);
+
+          console.log(itemFormatado);
 
           return {
             ...item,
@@ -96,6 +107,7 @@ export class PedidoService {
             min: (item as any).qtd_sugerida_min ?? null,
             max: (item as any).qtd_sugerida_max ?? null,
             pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
+            custo_fabrica: itemFormatado.values().next().value.custo_fabrica ?? null,
           };
         })
       );
@@ -743,3 +755,5 @@ export class PedidoService {
     };
   }
 }
+
+

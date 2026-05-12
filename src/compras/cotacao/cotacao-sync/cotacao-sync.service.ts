@@ -81,7 +81,7 @@ export class CotacaoSyncService {
    *
    * ⚠️ Requer que o OpenQueryService entregue um pool MSSQL conectado.
    */
-  private async fetchProdutosInfoOneShot(
+  async fetchProdutosInfoOneShot(
     codigos: number[],
     empresa = 3,
   ): Promise<
