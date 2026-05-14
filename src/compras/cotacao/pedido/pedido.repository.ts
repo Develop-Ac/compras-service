@@ -249,4 +249,12 @@ export class PedidoRepository {
       },
     });
   }
+
+  /** Atualiza o status de um pedido */
+  async updateStatus(id: string, status: string) {
+    return this.prisma.com_pedido.update({
+      where: { id },
+      data: { status },
+    });
+  }
 }

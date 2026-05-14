@@ -72,9 +72,17 @@ model ofi_checklists {
   updatedAt                    DateTime                 @updatedAt
   assinaturasclienteBase64     String?
   assinaturasresponsavelBase64 String?
+  data_hora_entrega            DateTime?                @db.Timestamp(6)
+  status                       String?
+  assinatura_retirada_base64   String?
+  dataHoraEntrega              DateTime?
+  assinaturaRetiradaBase64     String?
   ofi_checklists_avarias       ofi_checklists_avarias[]
   ofi_checklists_fotos         ofi_checklists_fotos[]
   ofi_checklists_items         ofi_checklists_items[]
+
+  @@index([data_hora_entrega], map: "idx_ofi_checklists_data_hora_entrega")
+  @@index([status, data_hora_entrega], map: "idx_ofi_checklists_status_entrega")
 }
 
 model ofi_checklists_avarias {
@@ -149,6 +157,7 @@ model com_pedido {
   frete          Decimal?           @db.Decimal(10, 2)
   prazo          String?            @db.VarChar(100)
   nomeFrete      String?            @db.VarChar(255)
+  status         String?            @db.VarChar(50)
   itens          com_pedido_itens[]
 
   @@unique([pedido_cotacao, for_codigo])
@@ -157,28 +166,31 @@ model com_pedido {
 }
 
 model com_pedido_itens {
-  id             String     @id @default(cuid())
-  pedido_id      String
-  item_id_origem String?
-  pro_codigo     Int
-  pro_descricao  String
-  mar_descricao  String?
-  referencia     String?
-  unidade        String?
-  emissao        DateTime?
-  valor_unitario Decimal?
-  custo_fabrica  Decimal?
-  preco_custo    Decimal?
-  for_codigo     Int
-  quantidade     Decimal
-  created_at     DateTime   @default(now())
-  renato         Boolean?   @default(false)
-  carlos         Boolean?   @default(false)
-  justificativa  String?    @db.VarChar(100)
-  pedido         com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  pedido_id        String
+  item_id_origem   String?
+  pro_codigo       Int
+  pro_descricao    String
+  mar_descricao    String?
+  referencia       String?
+  unidade          String?
+  emissao          DateTime?
+  valor_unitario   Decimal?
+  custo_fabrica    Decimal?
+  preco_custo      Decimal?
+  for_codigo       Int
+  quantidade       Decimal
+  created_at       DateTime   @default(now())
+  renato           Boolean?   @default(false)
+  carlos           Boolean?   @default(false)
+  justificativa    String?    @db.VarChar(100)
+  qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
+  qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
+  pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
   @@index([pedido_id])
+  @@index([pedido_id, pro_codigo, for_codigo], map: "idx_com_pedido_itens_pedido_produto_sug")
 }
 
 model est_contagem {
@@ -424,6 +436,7 @@ model eco_produtos_carros {
   carro_10      String? @db.VarChar(150)
   ano_10        String? @db.VarChar(100)
   id            BigInt  @id @default(autoincrement())
+  status        String? @db.VarChar(50)
 
   @@ignore
 }
@@ -785,6 +798,7 @@ model ofi_checklists_fotos {
   checklist_id   String
   foto           String?
   timestamp      DateTime       @default(now()) @db.Timestamp(6)
+  tipo_foto      Json?
   ofi_checklists ofi_checklists @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ofi_checklists")
 
   @@index([checklist_id], map: "idx_ofi_checklists_fotos_checklist_id")

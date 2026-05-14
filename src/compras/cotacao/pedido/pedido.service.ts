@@ -237,6 +237,7 @@ export class PedidoService {
       total_qtd: number;
       total_valor: number;
       total_valor_fmt: string;
+      status: string;
     }> = [];
     for (const p of pedidos) {
       let totalQtd = 0;
@@ -262,6 +263,7 @@ export class PedidoService {
         id: p.id,
         pedido_cotacao: p.pedido_cotacao,
         for_codigo: p.for_codigo,
+        status: p.status ?? '',
         for_nome,
         created_at: p.created_at,
         itens_count: p._count.itens,
@@ -767,6 +769,12 @@ export class PedidoService {
       message: 'Quantidade atualizada com sucesso',
       item,
     };
+  }
+
+  async atualizarStatus(id: string, status: string) {
+    const pedido = await this.repo.updateStatus(id, status);
+    if (!pedido) throw new NotFoundException(`Pedido ${id} não encontrado`);
+    return pedido;
   }
 }
 

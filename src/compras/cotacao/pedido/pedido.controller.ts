@@ -4,6 +4,7 @@
 import { Body, Controller, Get, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { PedidoService } from './pedido.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
 import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
 import { TransportadoraDto } from './dto/transportadora.dto';
 import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
@@ -216,5 +217,26 @@ export class PedidoController {
   })
   async create(@Body() body: CreatePedidoDto) {
     return this.service.createOrReplace(body);
+  }
+
+  // PUT /pedido/status/:id -> atualiza status do pedido
+  @Put('status/:id')
+  @ApiOperation({
+    summary: 'Atualiza o status de um pedido',
+    description: 'Altera a coluna status da tabela com_pedido pelo id informado',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido',
+    example: 'cm123abc',
+  })
+  @ApiOkResponse({
+    description: 'Status atualizado com sucesso',
+  })
+  @ApiBadRequestResponse({
+    description: 'Dados inválidos fornecidos',
+  })
+  async updateStatus(@Param('id') id: string, @Body() body: UpdateStatusDto) {
+    return this.service.atualizarStatus(id, body.status);
   }
 }
