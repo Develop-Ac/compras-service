@@ -11,4 +11,8 @@ export class UpdateItemQuantidadeDto {
   @IsNumber()
   @IsPositive()
   quantidade: number;
+
+  @IsString()
+  @IsNotEmpty()
+  usuario: string;
 }

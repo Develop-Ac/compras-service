@@ -182,7 +182,7 @@ export class PedidoController {
     @Param('id') pedidoId: string,
     @Body() body: UpdateItemQuantidadeDto,
   ) {
-    return this.service.atualizarQuantidadeItem(pedidoId, body.id, body.quantidade);
+    return this.service.atualizarQuantidadeItem(pedidoId, body.id, body.quantidade, body.usuario);
   }
 
   @Put('justificativa/:id')
