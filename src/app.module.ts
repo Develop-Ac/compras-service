@@ -13,6 +13,7 @@ import { NotaFiscalModule } from './compras/nota fiscal/nota fiscal/notaFiscal.m
 import { kanbanModule } from './compras/kanban/kanban.module';
 import { ItensModule } from './compras/itens/intes.module';
 import { RabbitMqModule } from './compras/cotacao/job/rabbitmq.module';
+import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 
 @Module({
 imports: [
@@ -26,6 +27,7 @@ imports: [
     NotaFiscalModule,
     kanbanModule,
     ItensModule,
+    PedidosLogsModule,
     RabbitMqModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
@@ -37,7 +39,8 @@ imports: [
       { path: 'compras', module: PedidoModule },
       { path: 'compras', module: NotaFiscalModule },
       { path: 'compras', module: kanbanModule },
-      { path: 'compras', module: ItensModule }
+      { path: 'compras', module: ItensModule },
+      { path: 'compras', module: PedidosLogsModule }
     ]),
   ],
   controllers: [AppController],
