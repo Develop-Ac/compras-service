@@ -12,6 +12,11 @@ export class UpdateItemQuantidadeDto {
   @IsPositive()
   quantidade: number;
 
+  @ApiProperty({ description: 'Quantidade antiga do item', example: 5 })
+  @IsNumber()
+  @IsPositive()
+  quantidade_antiga: number;
+
   @IsString()
   @IsNotEmpty()
   usuario: string;
