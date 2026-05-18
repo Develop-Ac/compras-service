@@ -250,6 +250,23 @@ export class PedidoRepository {
     });
   }
 
+  async findPedidoCodigoByPedidoId(pedidoId: string) {
+    const pedido = await this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { pedido_cotacao: true },
+    });
+    return pedido?.pedido_cotacao ?? null;
+  }
+
+  async findItemInfoById(itemId: string) {
+    return this.prisma.com_pedido_itens.findUnique({
+      where: { id: itemId },
+      select: {
+        pro_codigo: true,
+      },
+    });
+  }
+
   /** Atualiza o status de um pedido */
   async updateStatus(id: string, status: string) {
     return this.prisma.com_pedido.update({

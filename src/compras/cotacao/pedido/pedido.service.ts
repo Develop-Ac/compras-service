@@ -758,18 +758,21 @@ export class PedidoService {
   async atualizarQuantidadeItem(pedidoId: string, itemId: string, quantidade: number, usuario: string) {
     const item = await this.repo.updateItemQuantidade(pedidoId, itemId, quantidade);
 
+    const pedidoCodigo = await this.repo.findPedidoCodigoByPedidoId(pedidoId);
 
-      await fetch('http://log-service.acacessorios.local/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usuario: usuario,
-          setor: 'Compras',
-          tela: 'Detalhes do Pedido',
-          acao: 'Update',
-          descricao: `Atualizada quantidade do item ${itemId} no pedido ${pedidoId} para ${quantidade}.`,
-        }),
-      });
+    const itemInfo = (await this.repo.findItemInfoById(itemId))?.pro_codigo;
+
+    await fetch('http://log-service.acacessorios.local/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usuario: usuario,
+        setor: 'Compras',
+        tela: 'Detalhes do Pedido',
+        acao: 'Update',
+        descricao: `Atualizada quantidade do item ${itemInfo} no pedido ${pedidoCodigo} para ${quantidade}.`,
+      }),
+    });
 
     if (!item) {
       throw new NotFoundException(
