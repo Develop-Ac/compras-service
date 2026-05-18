@@ -758,8 +758,6 @@ export class PedidoService {
   async atualizarQuantidadeItem(pedidoId: string, itemId: string, quantidade: number, quantidade_antiga: number, usuario: string) {
     const item = await this.repo.updateItemQuantidade(pedidoId, itemId, quantidade);
 
-    const pedidoCodigo = await this.repo.findPedidoCodigoByPedidoId(pedidoId);
-
     const itemInfo = (await this.repo.findItemInfoById(itemId))?.pro_codigo;
 
     await fetch('http://log-service.acacessorios.local/log', {
@@ -770,7 +768,7 @@ export class PedidoService {
         setor: 'Compras',
         tela: 'Detalhes do Pedido',
         acao: 'Update',
-        descricao: `Atualizada quantidade do item ${itemInfo} no pedido ${pedidoCodigo}, de ${quantidade_antiga} para ${quantidade}.`,
+        descricao: `Atualizada quantidade do item ${itemInfo} no pedido ${pedidoId}, de ${quantidade_antiga} para ${quantidade}.`,
       }),
     });
 
