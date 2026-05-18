@@ -11,6 +11,7 @@ export class CreateFornecedorItemDto {
   UNIDADE?: string | null;
   QUANTIDADE!: number | string;
   DT_ULTIMA_COMPRA?: string | null;
+  QTD_SUGERIDA!: number | string;
 }
 
 export class CreateFornecedorDto {

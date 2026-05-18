@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
-import { CreateFornecedorDto } from './fornecedor.dto';
+import { CreateFornecedorDto, CreateFornecedorItemDto } from './fornecedor.dto';
 import { FornecedorRepository } from './fornecedor.repository';
 
 @Injectable()
@@ -122,7 +122,8 @@ export class FornecedorService {
     });
 
     // 2) Busca ITENS-BASE da cotação apenas pelo pedido_cotacao
-    const itensBase = await this.repository.findCotacaoItens(dto.pedido_cotacao);
+    // const itensBase = await this.repository.findCotacaoItens(dto.pedido_cotacao);
+    const itensBase = dtoIn.itens ?? [];
 
     // 3) Monta payload no formato esperado pelo Next
     // Tipagem explícita para row, incluindo dt_ultima_compra
@@ -138,17 +139,17 @@ export class FornecedorService {
       dt_ultima_compra?: Date | string | null;
     };
 
-    const itensParaNext = (itensBase as CotacaoItemRow[]).map((row) => ({
+    const itensParaNext = (itensBase as CreateFornecedorItemDto[]).map((row) => ({
       PEDIDO_COTACAO: dto.pedido_cotacao,
-      EMISSAO: row.emissao ? new Date(row.emissao as any).toISOString() : null,
-      PRO_CODIGO: row.pro_codigo as number | string, // se no banco for TEXT, string é segura
-      PRO_DESCRICAO: row.pro_descricao as string,
-      MAR_DESCRICAO: (row.mar_descricao as string | null) ?? null,
-      REFERENCIA: (row.referencia as string | null) ?? null,
-      UNIDADE: (row.unidade as string | null) ?? null,
-      QUANTIDADE: Number(row.quantidade),
-      QTD_SUGERIDA: Number(row.qtd_sugerida),
-      DT_ULTIMA_COMPRA: row.dt_ultima_compra ?? null,
+      EMISSAO: row.EMISSAO ? new Date(row.EMISSAO as any).toISOString() : null,
+      PRO_CODIGO: row.PRO_CODIGO as number | string, // se no banco for TEXT, string é segura
+      PRO_DESCRICAO: row.PRO_DESCRICAO as string,
+      MAR_DESCRICAO: (row.MAR_DESCRICAO as string | null) ?? null,
+      REFERENCIA: (row.REFERENCIA as string | null) ?? null,
+      UNIDADE: (row.UNIDADE as string | null) ?? null,
+      QUANTIDADE: Number(row.QUANTIDADE),
+      QTD_SUGERIDA: Number(row.QTD_SUGERIDA),
+      DT_ULTIMA_COMPRA: row.DT_ULTIMA_COMPRA ? new Date(row.DT_ULTIMA_COMPRA as any).toISOString() : null,
     }));
 
     // ⚠️ NÃO envie cpf_cnpj: null — use undefined para omitir no JSON
@@ -219,5 +220,9 @@ export class FornecedorService {
       for_nome: r.for_nome ?? null,
       cpf_cnpj: r.cpf_cnpj ?? null,
     }));
+  }
+
+  async listarCotacaoItens(pedido_cotacao: number) {
+    return this.repository.findCotacaoItens(pedido_cotacao);
   }
 }

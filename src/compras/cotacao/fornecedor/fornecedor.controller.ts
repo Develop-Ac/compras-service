@@ -5,7 +5,8 @@ import { CreateFornecedorDto } from './fornecedor.dto';
 import { 
   ApiOperation, 
   ApiTags, 
-  ApiQuery, 
+  ApiQuery,
+  ApiParam,
   ApiOkResponse, 
   ApiCreatedResponse,
   ApiBadRequestResponse 
@@ -64,6 +65,27 @@ export class FornecedorController {
     if (!Number.isFinite(n)) return { data: [], total: 0 };
     const data = await this.service.listarFornecedoresPorPedido(n);
     return { data, total: data.length };
+  }
+
+  // GET /fornecedor/:pedido_cotacao/itens -> lista itens da cotação
+  @Get(':pedido_cotacao/itens')
+  @ApiOperation({
+    summary: 'Lista itens da cotação por pedido',
+    description: 'Retorna todos os itens da tabela com_cotacao_itens filtrados pelo pedido_cotacao',
+  })
+  @ApiParam({
+    name: 'pedido_cotacao',
+    description: 'ID do pedido de cotação',
+    example: '3957',
+    type: 'string',
+  })
+  @ApiOkResponse({
+    description: 'Lista de itens retornada com sucesso',
+  })
+  async listarItens(@Param('pedido_cotacao') pedido_cotacao: string) {
+    const n = Number(pedido_cotacao);
+    if (!Number.isFinite(n)) return [];
+    return this.service.listarCotacaoItens(n);
   }
 
   /**
