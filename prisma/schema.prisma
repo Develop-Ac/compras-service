@@ -143,6 +143,7 @@ model com_cotacao_itens_for {
   quantidade     Int
   valor_unitario Float?
   qtd_sugerida   Int?            @default(0)
+  ref_fornecedor String?         @db.VarChar(255)
   cotacao        com_cotacao_for @relation(fields: [pedido_cotacao, for_codigo], references: [pedido_cotacao, for_codigo], onDelete: Cascade)
 
   @@index([pedido_cotacao, for_codigo])
@@ -803,4 +804,13 @@ model ofi_checklists_fotos {
   ofi_checklists ofi_checklists @relation(fields: [checklist_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ofi_checklists")
 
   @@index([checklist_id], map: "idx_ofi_checklists_fotos_checklist_id")
+}
+
+model com_produto_fornecedor_referencia {
+  id         String    @id @db.VarChar(191)
+  fornecedor Int
+  referencia String    @db.VarChar(255)
+  descricao  String    @db.VarChar(255)
+  data       DateTime? @default(now()) @db.Timestamp(6)
+  codigo     String?   @db.VarChar(255)
 }

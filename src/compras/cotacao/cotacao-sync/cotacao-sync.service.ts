@@ -26,6 +26,7 @@ type NextFornecedor = {
     qtd_sugerida: number;
     emissao: string | null;
     valor_unitario: string | null;
+    ref_fornecedor: string | null;
   }>;
 };
 
@@ -217,6 +218,7 @@ export class CotacaoSyncService {
           quantidade: this.parseIntStrict('QUANTIDADE', i.quantidade),
           qtd_sugerida: Number(i.qtd_sugerida),
           valor_unitario: this.parseMoney('VALOR_UNITARIO', i.valor_unitario) ?? null,
+          ref_fornecedor: i.ref_fornecedor
         })),
       }));
       await this.repo.upsertFornecedorComItensTx(mapped);
