@@ -19,6 +19,7 @@ export class CotacaoSyncRepository {
         pro_descricao: string;
         mar_descricao: string | null;
         referencia: string | null;
+        ref_fornecedor: string | null;
         unidade: string | null;
         quantidade: number;
         qtd_sugerida: number;
@@ -73,7 +74,7 @@ export class CotacaoSyncRepository {
             data: {
               id: id,
               fornecedor: forn.for_codigo,
-              referencia: item.referencia ?? "",
+              referencia: item.ref_fornecedor ?? "",
               descricao: item.pro_descricao,
               codigo: item.pro_codigo.toString(),
               data: new Date(
