@@ -75,15 +75,17 @@ export class CotacaoSyncRepository {
                 referencia: inputs[0].referencia ?? "",
                 descricao: inputs[0].pro_descricao,
                 codigo: inputs[0].pro_codigo.toString(),
-                data: new Intl.DateTimeFormat("sv-SE", {
-                      timeZone: "America/Cuiaba",
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    }).format(new Date())
+                data: new Date(
+                  new Intl.DateTimeFormat("sv-SE", {
+                    timeZone: "America/Cuiaba",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  }).format(new Date()).replace(" ", "T"),
+                ),
               }
             })
           }
