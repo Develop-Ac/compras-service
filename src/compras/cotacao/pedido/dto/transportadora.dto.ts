@@ -11,4 +11,8 @@ export class TransportadoraDto {
   @IsNumber()
   @Type(() => Number)
   frete: number;
+
+  @ApiProperty({ description: 'Categoria do frete', example: 'Cif' })
+  @IsString()
+  categoriaFrete: string;
 }

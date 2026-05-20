@@ -1,7 +1,7 @@
 // src/pedido/pedido.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Response as ExpressResponse } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, sis_feriados } from '@prisma/client';
 import { PedidoRepository } from './pedido.repository';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import * as fs from 'fs';
@@ -706,8 +706,8 @@ export class PedidoService {
   }
 
   /** Atualiza transportadora (nomeFrete e frete) de um pedido */
-  async atualizarTransportadora(id: string, nomeFrete: string, frete: number) {
-    const pedido = await this.repo.updateTransportadora(id, nomeFrete, frete);
+  async atualizarTransportadora(id: string, nomeFrete: string, frete: number, categoriaFrete: string) {
+    const pedido = await this.repo.updateTransportadora(id, nomeFrete, frete, categoriaFrete);
     return { ok: true, pedido };
   }
 

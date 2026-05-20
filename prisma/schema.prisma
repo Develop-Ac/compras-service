@@ -158,6 +158,7 @@ model com_pedido {
   prazo          String?            @db.VarChar(100)
   nomeFrete      String?            @db.VarChar(255)
   status         String?            @db.VarChar(50)
+  categoriaFrete String?            @db.VarChar(255)
   itens          com_pedido_itens[]
 
   @@unique([pedido_cotacao, for_codigo])

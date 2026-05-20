@@ -163,7 +163,7 @@ export class PedidoController {
     @Param('id') id: string,
     @Body() body: TransportadoraDto,
   ) {
-    return this.service.atualizarTransportadora(id, body.nomeFrete, body.frete);
+    return this.service.atualizarTransportadora(id, body.nomeFrete, body.frete, body.categoriaFrete);
   }
 
   @Put('item/:id')

@@ -168,10 +168,10 @@ export class PedidoRepository {
   }
 
   /** Atualiza transportadora (nomeFrete e frete) de um pedido */
-  async updateTransportadora(id: string, nomeFrete: string, frete: number) {
+  async updateTransportadora(id: string, nomeFrete: string, frete: number, categoriaFrete: string) {
     return this.prisma.com_pedido.update({
       where: { id },
-      data: { nomeFrete, frete },
+      data: { nomeFrete, frete, categoriaFrete },
     });
   }
 
