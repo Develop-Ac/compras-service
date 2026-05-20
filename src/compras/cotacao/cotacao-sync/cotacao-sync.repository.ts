@@ -65,30 +65,32 @@ export class CotacaoSyncRepository {
             valor_unitario: i.valor_unitario,
             dt_ultima_compra: i.dt_ultima_compra,
           }));
-          if (inputs.length) {
-            await tx.com_cotacao_itens_for.createMany({ data: inputs });
-            const id = cuid()
-            await tx.com_produto_fornecedor_referencia.create({
-              data:{
-                id: id,
-                fornecedor: forn.for_codigo,
-                referencia: inputs[0].referencia ?? "",
-                descricao: inputs[0].pro_descricao,
-                codigo: inputs[0].pro_codigo.toString(),
-                data: new Date(
-                  new Intl.DateTimeFormat("sv-SE", {
-                    timeZone: "America/Cuiaba",
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                  }).format(new Date()).replace(" ", "T"),
-                ),
-              }
-            })
-          }
+          if (inputs.length) { await tx.com_cotacao_itens_for.createMany({ data: inputs }); }
+
+        for (const item of forn.itens) {
+          const id = cuid();
+          await tx.com_produto_fornecedor_referencia.create({
+            data: {
+              id: id,
+              fornecedor: forn.for_codigo,
+              referencia: item.referencia ?? "",
+              descricao: item.pro_descricao,
+              codigo: item.pro_codigo.toString(),
+              data: new Date(
+                new Intl.DateTimeFormat("sv-SE", {
+                  timeZone: "America/Cuiaba",
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                }).format(new Date()).replace(" ", "T"),
+              ),
+            },
+          });
+        }
+          
         }
       }
     });
