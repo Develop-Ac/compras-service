@@ -139,7 +139,7 @@ export class FornecedorService {
       dt_ultima_compra?: Date | string | null;
     };
 
-    const itensParaNext = (itensBase as CreateFornecedorItemDto[]).map(async (row) => ({
+    const itensParaNext = await Promise.all((itensBase as CreateFornecedorItemDto[]).map(async (row) => ({
       PEDIDO_COTACAO: dto.pedido_cotacao,
       EMISSAO: row.EMISSAO ? new Date(row.EMISSAO as any).toISOString() : null,
       PRO_CODIGO: row.PRO_CODIGO as number | string, // se no banco for TEXT, string é segura
@@ -150,7 +150,7 @@ export class FornecedorService {
       QUANTIDADE: Number(row.QUANTIDADE),
       QTD_SUGERIDA: Number(row.QTD_SUGERIDA),
       DT_ULTIMA_COMPRA: row.DT_ULTIMA_COMPRA ? new Date(row.DT_ULTIMA_COMPRA as any).toISOString() : null,
-    }));
+    })));
 
     // ⚠️ NÃO envie cpf_cnpj: null — use undefined para omitir no JSON
     const payloadParaNext: any = {
