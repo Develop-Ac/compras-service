@@ -23,6 +23,19 @@ export class FornecedorRepository {
     });
   }
 
+  async findRefForByCotacaoAndFornecedor(pedido_cotacao: number, for_codigo: number, referencia: string) {
+    const item = await this.prisma.com_produto_fornecedor_referencia.findFirst({
+      where: {
+        fornecedor: for_codigo,
+        codigo: pedido_cotacao.toString(),
+      },
+      orderBy: { data: 'desc' },
+    })
+
+    if (!item?.referencia) return referencia;
+    return item.referencia;
+  }
+
   async findCotacaoItens(pedido_cotacao: number) {
     return this.prisma.com_cotacao_itens.findMany({
       where: { pedido_cotacao },
