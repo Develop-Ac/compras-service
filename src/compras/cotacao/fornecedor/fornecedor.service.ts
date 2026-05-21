@@ -139,13 +139,13 @@ export class FornecedorService {
       dt_ultima_compra?: Date | string | null;
     };
 
-    const itensParaNext = (itensBase as CreateFornecedorItemDto[]).map((row) => ({
+    const itensParaNext = (itensBase as CreateFornecedorItemDto[]).map(async (row) => ({
       PEDIDO_COTACAO: dto.pedido_cotacao,
       EMISSAO: row.EMISSAO ? new Date(row.EMISSAO as any).toISOString() : null,
       PRO_CODIGO: row.PRO_CODIGO as number | string, // se no banco for TEXT, string é segura
       PRO_DESCRICAO: row.PRO_DESCRICAO as string,
       MAR_DESCRICAO: (row.MAR_DESCRICAO as string | null) ?? null,
-      REFERENCIA: this.repository.findRefForByCotacaoAndFornecedor(row.PRO_CODIGO, dto.for_codigo, row.REFERENCIA ?? ""),
+      REFERENCIA: await this.repository.findRefForByCotacaoAndFornecedor(row.PRO_CODIGO, dto.for_codigo, row.REFERENCIA ?? ""),
       UNIDADE: (row.UNIDADE as string | null) ?? null,
       QUANTIDADE: Number(row.QUANTIDADE),
       QTD_SUGERIDA: Number(row.QTD_SUGERIDA),
