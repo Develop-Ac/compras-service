@@ -23,11 +23,11 @@ export class FornecedorRepository {
     });
   }
 
-  async findRefForByCotacaoAndFornecedor(pro_codigo: string, for_codigo: number, referencia: string) {
+  async findRefForByCotacaoAndFornecedor(pro_codigo: string | number, for_codigo: number, referencia: string) {
     const item = await this.prisma.com_produto_fornecedor_referencia.findFirst({
       where: {
         fornecedor: for_codigo,
-        codigo: pro_codigo,
+        codigo: String(pro_codigo),
       },
       orderBy: { data: 'desc' },
     })
