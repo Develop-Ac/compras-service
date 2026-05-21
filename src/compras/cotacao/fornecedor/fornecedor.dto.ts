@@ -4,7 +4,7 @@ import { Type } from 'class-transformer';
 export class CreateFornecedorItemDto {
   PEDIDO_COTACAO!: number;
   EMISSAO?: string | null;
-  PRO_CODIGO!: number | string;
+  PRO_CODIGO!: string;
   PRO_DESCRICAO!: string;
   MAR_DESCRICAO?: string | null;
   REFERENCIA?: string | null;

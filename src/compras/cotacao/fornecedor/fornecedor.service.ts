@@ -71,7 +71,7 @@ export class FornecedorService {
       return {
         ...i,
         QUANTIDADE: qtd,
-        PRO_CODIGO: proCodigo,
+        PRO_CODIGO: String(proCodigo),
         EMISSAO: i.EMISSAO ?? null,
       };
     });
@@ -145,7 +145,7 @@ export class FornecedorService {
       PRO_CODIGO: row.PRO_CODIGO as number | string, // se no banco for TEXT, string é segura
       PRO_DESCRICAO: row.PRO_DESCRICAO as string,
       MAR_DESCRICAO: (row.MAR_DESCRICAO as string | null) ?? null,
-      REFERENCIA: this.repository.findRefForByCotacaoAndFornecedor(dto.pedido_cotacao, dto.for_codigo, row.REFERENCIA ?? ""),
+      REFERENCIA: this.repository.findRefForByCotacaoAndFornecedor(row.PRO_CODIGO, dto.for_codigo, row.REFERENCIA ?? ""),
       UNIDADE: (row.UNIDADE as string | null) ?? null,
       QUANTIDADE: Number(row.QUANTIDADE),
       QTD_SUGERIDA: Number(row.QTD_SUGERIDA),
