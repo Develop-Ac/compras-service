@@ -26,21 +26,78 @@ export class PedidoRepository {
     });
   }
 
+  async findReferenciaByCodigoAndFornecedor(pro_codigo: string | number, for_codigo: number, referencia: string) {
+    const item = await this.prisma.com_produto_fornecedor_referencia.findFirst({
+      where: {
+        fornecedor: for_codigo,
+        codigo: String(pro_codigo),
+      },
+      orderBy: { data: 'desc' },
+    });
+
+    if (!item?.referencia) return referencia;
+    return item.referencia;
+  }
+
+  /** Busca referências de múltiplos itens em uma única query */
+  private async findReferenciasEmLote(
+    pairs: { pro_codigo: number; for_codigo: number }[],
+  ): Promise<Map<string, string>> {
+    if (!pairs.length) return new Map();
+
+    const rows = await this.prisma.com_produto_fornecedor_referencia.findMany({
+      where: {
+        OR: pairs.map((p) => ({
+          codigo: String(p.pro_codigo),
+          fornecedor: p.for_codigo,
+        })),
+      },
+      orderBy: { data: 'desc' },
+    });
+
+    // Chave: `${codigo}_${fornecedor}` → primeira referência encontrada (mais recente)
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      const key = `${row.codigo}_${row.fornecedor}`;
+      if (!map.has(key) && row.referencia) {
+        map.set(key, row.referencia);
+      }
+    }
+    return map;
+  }
+
   /** Busca um pedido por id (para PDF) */
   async findByIdWithItens(id: string) {
-    return this.prisma.com_pedido.findUnique({
+    const pedido = await this.prisma.com_pedido.findUnique({
       where: { id },
       include: {
-      itens: {
-        where: {
-        OR: [
-          { renato: true },
-          { carlos: true },
-        ],
+        itens: {
+          where: {
+            OR: [
+              { renato: true },
+              { carlos: true },
+            ],
+          },
         },
       },
-      },
     });
+
+    if (!pedido) return null;
+
+    const pairs = pedido.itens.map((item) => ({
+      pro_codigo: item.pro_codigo,
+      for_codigo: item.for_codigo,
+    }));
+
+    const referenciaMap = await this.findReferenciasEmLote(pairs);
+
+    const itensComReferencia = pedido.itens.map((item) => {
+      const key = `${item.pro_codigo}_${item.for_codigo}`;
+      const referencia = referenciaMap.get(key) ?? item.referencia ?? '';
+      return { ...item, referencia };
+    });
+
+    return { ...pedido, itens: itensComReferencia };
   }
 
   async findByIdWithItensToAutorizar(id: string) {
