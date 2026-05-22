@@ -27,6 +27,29 @@ import {
 export class PedidoController {
   constructor(private readonly service: PedidoService) {}
 
+    @Get('excel/:id')
+  @ApiOperation({
+    summary: 'Gera Excel do pedido',
+    description: 'Gera e retorna um arquivo Excel com os itens do pedido',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido',
+    example: 'cm123abc',
+  })
+  @ApiProduces('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @ApiOkResponse({
+    description: 'Excel gerado com sucesso',
+    content: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+        schema: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  async excel(@Param('id') id: string, @Res() res: ExpressResponse) {
+    await this.service.gerarExcel(res, id);
+  }
+
     // GET /pedido  -> listagem leve
   @Get()
   @ApiOperation({ 

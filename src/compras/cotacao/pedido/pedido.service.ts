@@ -275,6 +275,41 @@ export class PedidoService {
     return results;
   }
 
+  async gerarExcel(res: ExpressResponse, id: string) {
+    const pedido = await this.repo.findByIdWithItens(id);
+
+    if (!pedido) throw new NotFoundException('Pedido não encontrado');
+
+    const ExcelJSModule = await import('exceljs');
+    const ExcelJS = ExcelJSModule.default ?? ExcelJSModule;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Pedido');
+
+    sheet.columns = [
+      { header: 'Codigo', key: 'pro_codigo', width: 12 },
+      { header: 'Referencia', key: 'referencia', width: 20 },
+      { header: 'Uni', key: 'unidade', width: 8 },
+      { header: 'Quantidade', key: 'quantidade', width: 14 },
+      { header: 'Valor Unitario', key: 'valor_unitario', width: 16 },
+    ];
+
+    for (const it of pedido.itens) {
+      sheet.addRow({
+      pro_codigo: it.pro_codigo,
+      referencia: it.referencia ?? '',
+      unidade: it.unidade ?? '',
+      quantidade: Number(it.quantidade ?? 0),
+      valor_unitario: it.valor_unitario != null ? Number(it.valor_unitario) : '',
+      });
+    }
+
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', `attachment; filename="pedido_${pedido.pedido_cotacao}.xlsx"`);
+
+    await workbook.xlsx.write(res as unknown as import('stream').Writable);
+    res.end();
+  }
+
   /**
    * Gera PDF do pedido por ID (Express).
    * - Título central alinhado verticalmente ao centro da logo
