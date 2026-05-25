@@ -82,8 +82,68 @@ export class PedidoService {
    */
   async buscarPedidoSincronizacao(id: string) {
     const pedido = await this.repo.findByIdWithAllForSincronizacao(id);
-    if (!pedido) throw new NotFoundException('Pedido não encontrado');
-    return pedido;
+
+    if (!pedido || pedido.length === 0) throw new NotFoundException('Pedido não encontrado');
+
+    const syncData = await firstValueFrom(
+      new (await import('@nestjs/axios')).HttpService().get(`http://localhost:8000/compras/cotacao-sync/${id}`)
+    );
+    const syncJson = syncData.data;
+
+    // Monta um map de fornecedores da syncJson por for_codigo
+    const syncForMap: Record<number, any> = {};
+    for (const forn of (syncJson?.fornecedores ?? [])) {
+      syncForMap[Number(forn.for_codigo)] = forn;
+    }
+
+    // Para cada pedido (agrupado por fornecedor), mescla os itens
+    const result = pedido.map((p: any) => {
+      const syncForn = syncForMap[Number(p.for_codigo)];
+
+      if (!syncForn) return p;
+
+      // Monta map de itens do syncJson por pro_codigo
+      const syncItensMap: Record<number, any> = {};
+      for (const syncItem of (syncForn.itens ?? [])) {
+        syncItensMap[Number(syncItem.pro_codigo)] = syncItem;
+      }
+
+      // Para cada item do pedido, sobrescreve os campos divergentes com os do pedido (pedido tem prioridade)
+      const itens = (p.itens ?? []).map((item: any) => {
+        const syncItem = syncItensMap[Number(item.pro_codigo)];
+        if (!syncItem) return item;
+        // Pedido sobrescreve syncJson onde os valores forem diferentes
+        return {
+          ...syncItem,
+          ...item,
+        };
+      });
+
+      // Adiciona itens que estão no sync mas não estão no pedido
+      for (const syncItem of (syncForn.itens ?? [])) {
+        const exists = itens.some((i: any) => Number(i.pro_codigo) === Number(syncItem.pro_codigo));
+        if (!exists) {
+          itens.push(syncItem);
+        }
+      }
+
+      // Marca este fornecedor do syncJson como já processado
+      syncForn.__processado = true;
+
+      return {
+        ...p,
+        itens,
+      };
+    });
+
+    // Adiciona fornecedores que estão no syncJson mas não estão no pedido
+    for (const forn of (syncJson?.fornecedores ?? [])) {
+      if (!forn.__processado) {
+        result.push(forn);
+      }
+    }
+
+    return result;
   }
 
   /**
