@@ -48,6 +48,30 @@ async function bootstrap() {
     }),
   );
 
+  app.use(['/docs', '/docs-json'], (req, res, next) => {
+    const authHeader = req.headers.authorization;
+
+    const user = 'admin';
+    const password = 'Ac@2025acesso';
+
+    if (!authHeader || !authHeader.startsWith('Basic ')) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Swagger"');
+      return res.status(401).send('Autenticação necessária');
+    }
+
+    const base64Credentials = authHeader.split(' ')[1];
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf8');
+
+    const [inputUser, inputPassword] = credentials.split(':');
+
+    if (inputUser !== user || inputPassword !== password) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Swagger"');
+      return res.status(401).send('Usuário ou senha inválidos');
+    }
+
+    next();
+  });
+
   const allowedOrigins = parseOrigins(process.env.CORS_ORIGIN);
   // Ex.: CORS_ORIGIN="http://intranet.acacessorios.local,http://localhost:3000"
   // ou   CORS_ORIGIN="regex:^https?://(localhost:\d+|.*\.acacessorios\.local)$"
