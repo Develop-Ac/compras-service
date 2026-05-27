@@ -36,6 +36,18 @@ export class FornecedorRepository {
     return item.referencia;
   }
 
+  async findpedidoNotEntregue() {
+    return this.prisma.com_pedido_itens.findMany({
+      where: {
+        pedido: {
+          status: {
+            not: 'Entregue',
+          },
+        },
+      },
+    });
+  }
+
   async findCotacaoItens(pedido_cotacao: number) {
     return this.prisma.com_cotacao_itens.findMany({
       where: { pedido_cotacao },

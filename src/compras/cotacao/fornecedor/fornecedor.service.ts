@@ -223,6 +223,19 @@ export class FornecedorService {
   }
 
   async listarCotacaoItens(pedido_cotacao: number) {
-    return this.repository.findCotacaoItens(pedido_cotacao);
+    const cotacaoItens = await this.repository.findCotacaoItens(pedido_cotacao);
+
+    const pedidoItens = await this.repository.findpedidoNotEntregue();
+
+    const pedidoProCodigos = new Set(
+      pedidoItens.map((p) => Number(p.pro_codigo)),
+    );
+
+    const result = cotacaoItens.map((item) => ({
+      ...item,
+      pedido_aberto: pedidoProCodigos.has(Number(item.pro_codigo)),
+    }));
+
+    return result;
   }
 }
