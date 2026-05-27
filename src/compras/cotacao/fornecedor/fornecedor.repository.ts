@@ -37,14 +37,15 @@ export class FornecedorRepository {
   }
 
   async findpedidoNotEntregue() {
-    return this.prisma.com_pedido_itens.findMany({
+    return this.prisma.com_pedido.findMany({
       where: {
-        pedido: {
-          status: {
-            not: 'Entregue',
-          },
-        },
+      status: {
+        not: 'Entregue',
       },
+      },
+      include: {
+        itens: true,
+      }
     });
   }
 

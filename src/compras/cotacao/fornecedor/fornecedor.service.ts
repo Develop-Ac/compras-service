@@ -227,14 +227,24 @@ export class FornecedorService {
 
     const pedidoItens = await this.repository.findpedidoNotEntregue();
 
-    const pedidoProCodigos = new Set(
-      pedidoItens.map((p) => Number(p.pro_codigo)),
-    );
+    const pedidoPorProCodigo = new Map<number, number>();
+    for (const pedido of pedidoItens) {
+      for (const item of pedido.itens ?? []) {
+        const code = Number(item.pro_codigo);
+        if (!pedidoPorProCodigo.has(code)) {
+          pedidoPorProCodigo.set(code, Number(pedido.pedido_cotacao));
+        }
+      }
+    }
 
-    const result = cotacaoItens.map((item) => ({
-      ...item,
-      pedido_aberto: pedidoProCodigos.has(Number(item.pro_codigo)),
-    }));
+    const result = cotacaoItens.map((item) => {
+      const pedidoCotacaoMatch = pedidoPorProCodigo.get(Number(item.pro_codigo));
+      return {
+        ...item,
+        pedido_aberto: pedidoCotacaoMatch !== undefined,
+        pedido_cotacao: pedidoCotacaoMatch ?? null,
+      };
+    });
 
     return result;
   }
