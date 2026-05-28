@@ -203,7 +203,7 @@ export class PedidoRepository {
   ) {
     return tx.com_pedido.upsert({
       where: { pedido_cotacao_for_codigo: { pedido_cotacao, for_codigo } },
-      create: { pedido_cotacao, for_codigo, prazo },
+      create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise' },
       update: {  },
     });
   }
