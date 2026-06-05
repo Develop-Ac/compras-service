@@ -14,6 +14,7 @@ import { kanbanModule } from './compras/kanban/kanban.module';
 import { ItensModule } from './compras/itens/intes.module';
 import { RabbitMqModule } from './compras/cotacao/job/rabbitmq.module';
 import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
+import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 
 @Module({
 imports: [
@@ -29,6 +30,7 @@ imports: [
     ItensModule,
     PedidosLogsModule,
     RabbitMqModule,
+    VinculacaoNfeModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -40,7 +42,8 @@ imports: [
       { path: 'compras', module: NotaFiscalModule },
       { path: 'compras', module: kanbanModule },
       { path: 'compras', module: ItensModule },
-      { path: 'compras', module: PedidosLogsModule }
+      { path: 'compras', module: PedidosLogsModule },
+      { path: 'compras', module: VinculacaoNfeModule }
     ]),
   ],
   controllers: [AppController],
