@@ -331,4 +331,20 @@ export class PedidoRepository {
       data: { status },
     });
   }
+
+  async findFornecedorById(id: number) {
+    const fornecedor = await this.prisma.com_fornecedores.findFirst({
+      where: { for_codigo: id },
+      select: { for_nome: true },
+    });
+    return fornecedor?.for_nome ?? null;
+  }
+
+  async insertNewFonecedor(nome: string, id: number) {
+    const result = await this.prisma.com_fornecedores.create({
+      data: { for_nome: nome, for_codigo: id },
+      select: { for_codigo: true },
+    });
+    return result.for_codigo;
+  }
 }

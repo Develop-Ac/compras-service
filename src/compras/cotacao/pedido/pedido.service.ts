@@ -312,9 +312,17 @@ export class PedidoService {
       // Consulta for_nome via OPENQUERY
       let for_nome: string | null = null;
       try {
-        const sql = `SELECT FOR_NOME FROM OPENQUERY(CONSULTA, 'select FO.FOR_NOME from FORNECEDORES FO where FO.FOR_CODIGO = ${p.for_codigo} and FO.EMPRESA = 3')`;
-        const row = await this.oq.queryOne<{ FOR_NOME: string }>(sql, {}, { timeout: 10000 });
-        for_nome = row?.FOR_NOME ?? null;
+
+        for_nome = await this.repo.findFornecedorById(Number(p.for_codigo));
+
+        if (for_nome === null) {
+          const sql = `SELECT FOR_NOME FROM OPENQUERY(CONSULTA, 'select FO.FOR_NOME from FORNECEDORES FO where FO.FOR_CODIGO = ${p.for_codigo} and FO.EMPRESA = 3')`;
+          const row = await this.oq.queryOne<{ FOR_NOME: string }>(sql, {}, { timeout: 10000 });
+          for_nome = row?.FOR_NOME ?? null;
+
+          await this.repo.insertNewFonecedor(for_nome ?? '', Number(p.for_codigo));
+        }
+
       } catch {
         for_nome = null;
       }

@@ -9,23 +9,25 @@ datasource db {
 }
 
 model sis_usuarios {
-  nome              String
-  senha             String
-  trash             Int                @default(0)
-  id                String             @id @default(cuid())
-  codigo            String             @unique
-  perfil_acesso     String
-  avatar_url        String?
-  tema_preferencia  String             @default("system")
-  setor             String?            @db.VarChar(255)
-  est_auditoria     est_auditoria[]
-  est_contagem      est_contagem[]
-  est_contagem_logs est_contagem_log[]
-  fed_comentarios   fed_comentarios[]
-  fed_curtidas      fed_curtidas[]
-  fed_eventos       fed_eventos[]
-  fed_posts         fed_posts[]
-  sis_permissoes    sis_permissoes[]
+  nome               String
+  senha              String
+  trash              Int                @default(0)
+  id                 String             @id @default(cuid())
+  codigo             String             @unique
+  perfil_acesso      String
+  avatar_url         String?
+  tema_preferencia   String             @default("system")
+  setor              String?            @db.VarChar(255)
+  vendas_rep_codigo  Int?
+  vendas_hub_inicial String?            @db.VarChar(30)
+  est_auditoria      est_auditoria[]
+  est_contagem       est_contagem[]
+  est_contagem_logs  est_contagem_log[]
+  fed_comentarios    fed_comentarios[]
+  fed_curtidas       fed_curtidas[]
+  fed_eventos        fed_eventos[]
+  fed_posts          fed_posts[]
+  sis_permissoes     sis_permissoes[]
 }
 
 model com_cotacao {
@@ -813,4 +815,102 @@ model com_produto_fornecedor_referencia {
   descricao  String    @db.VarChar(255)
   data       DateTime? @default(now()) @db.Timestamp(6)
   codigo     String?   @db.VarChar(255)
+}
+
+model com_fornecedores {
+  id         Int    @id @default(autoincrement())
+  for_codigo Int
+  for_nome   String @db.VarChar(255)
+}
+
+model ven_carteira_cliente {
+  id             String    @id
+  cli_codigo     Int       @unique(map: "uq_ven_carteira_cliente_cli")
+  rep_codigo     Int?
+  rep_nome       String?
+  canal          String?
+  origem         String    @default("MANUAL")
+  observacao     String?
+  atribuido_por  String?
+  atribuido_em   DateTime  @default(now()) @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
+  trash          Int       @default(0)
+  revisao        Int       @default(0)
+  revisao_motivo String?
+  revisao_em     DateTime? @db.Timestamptz(6)
+
+  @@index([rep_codigo], map: "idx_ven_carteira_cliente_rep")
+  @@index([revisao], map: "idx_ven_carteira_cliente_revisao")
+}
+
+model ven_carteira_historico {
+  id                  String   @id
+  cli_codigo          Int
+  rep_codigo_anterior Int?
+  rep_nome_anterior   String?
+  rep_codigo_novo     Int?
+  rep_nome_novo       String?
+  acao                String
+  motivo              String?
+  usuario_id          String?
+  usuario_nome        String?
+  lote_id             String?
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([cli_codigo], map: "idx_ven_carteira_hist_cli")
+  @@index([created_at], map: "idx_ven_carteira_hist_created")
+  @@index([lote_id], map: "idx_ven_carteira_hist_lote")
+  @@index([rep_codigo_novo], map: "idx_ven_carteira_hist_rep_novo")
+}
+
+model ven_carteira_vendedor_config {
+  id               String   @id
+  rep_codigo       Int      @unique(map: "uq_ven_carteira_vend_cfg_rep")
+  rep_nome         String?
+  capacidade_max   Int?
+  canal            String?
+  ativo            Boolean  @default(true)
+  meta_faturamento Decimal? @db.Decimal(15, 2)
+  observacao       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model ven_meta_vendedor {
+  id             String   @id
+  rep_codigo     Int
+  rep_nome       String?
+  ano            Int
+  mes            Int
+  valor_meta     Decimal  @default(0) @db.Decimal(15, 2)
+  observacao     String?
+  atualizado_por String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([rep_codigo, ano, mes], map: "uq_ven_meta_vendedor_periodo")
+}
+
+model ven_venda_casada {
+  id            Int      @id @default(autoincrement())
+  nome_vendedor String?  @db.VarChar(255)
+  carro         String?  @db.VarChar(255)
+  ano           Int?
+  observacao    String?
+  cliente       String?  @db.VarChar(255)
+  numero        String?  @db.VarChar(50)
+  imagem        String?
+  status        String?  @db.VarChar(50)
+  pecas         String[]
+  pecas_cotadas String[]
+}
+
+model ven_venda_casada_itens {
+  id         Int     @id @default(autoincrement())
+  nome       String  @db.VarChar(255)
+  valor      Float   @db.Real
+  prazo      String? @db.VarChar(100)
+  fornecedor String? @db.VarChar(255)
+  marca      String? @db.VarChar(255)
 }
