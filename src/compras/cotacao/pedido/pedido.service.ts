@@ -356,6 +356,7 @@ export class PedidoService {
     sheet.columns = [
       { header: 'Codigo', key: 'pro_codigo', width: 12 },
       { header: 'Referencia', key: 'referencia', width: 20 },
+      { header: 'Descrição', key: 'pro_descricao', width: 45 },
       { header: 'Uni', key: 'unidade', width: 8 },
       { header: 'Quantidade', key: 'quantidade', width: 14 },
       { header: 'Valor Unitario', key: 'valor_unitario', width: 16 },
@@ -365,6 +366,7 @@ export class PedidoService {
       sheet.addRow({
       pro_codigo: it.pro_codigo,
       referencia: it.referencia ?? '',
+      pro_descricao: it.pro_descricao ?? '',
       unidade: it.unidade ?? '',
       quantidade: Number(it.quantidade ?? 0),
       valor_unitario: it.valor_unitario != null ? Number(it.valor_unitario) : '',
