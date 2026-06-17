@@ -153,8 +153,8 @@ export class PedidoService {
     const pedido = await this.repo.findByIdGerencial(id);
 
     if (pedido  !== null && pedido.itens  !== null) {
-      pedido.itens = await Promise.all( 
-        pedido.itens.map(async (item) => { 
+      pedido.itens = await Promise.all(
+        pedido.itens.map(async (item): Promise<any> => {
           const valores = await this.getValoresGerenciais(item.pro_codigo);
 
           const itemFormatado = await this.cotacaoSyncService.fetchProdutosInfoOneShot([item.pro_codigo], 3);
@@ -165,7 +165,7 @@ export class PedidoService {
             min: (item as any).qtd_sugerida_min ?? null,
             max: (item as any).qtd_sugerida_max ?? null,
             pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
-            custo_fabrica: itemFormatado.values().next().value.custo_fabrica ?? null,
+            custo_fabrica: itemFormatado.get(item.pro_codigo)?.custo_fabrica ?? null,
           };
         })
       );
