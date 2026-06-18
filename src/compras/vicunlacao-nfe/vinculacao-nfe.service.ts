@@ -372,6 +372,7 @@ export class VinculacaoNfeService {
       chaves_nfe: Set<string>;
     }
     const faturadoPorCodigo = new Map<number, AggFaturado>();
+    const chavesFaturadas = new Set<string>();
     const itensNfSemPedido: Array<{
       produto_xml: string;
       quantidade_xml: number;
@@ -381,6 +382,7 @@ export class VinculacaoNfeService {
 
     for (const it of itensVinculo) {
       const chave = it.vinculo?.chave_nfe ?? '';
+      if (chave) chavesFaturadas.add(chave);
       if (it.tipo === 'vinculado') {
         if (it.pro_codigo == null) continue;
         const cod = Number(it.pro_codigo);
@@ -440,7 +442,6 @@ export class VinculacaoNfeService {
       }
 
       valorPedidoTotal += valorPedido * quantidadePedido;
-      valorFaturadoTotal += valorFaturado * quantidadeFaturada;
 
       return {
         pro_codigo: cod,
@@ -455,6 +456,12 @@ export class VinculacaoNfeService {
         chaves_nfe: chavesNfe,
       };
     });
+
+    // "Valor Faturado" do resumo (cards superiores) = valor TOTAL da(s) NF(s)
+    // vinculada(s) (vNF real, de com_nfe_conciliacao), e não a soma dos itens
+    // casados. A coluna por item continua sendo o valor unitário da NF.
+    const concChaves = await this.repo.findConciliacaoByChaves([...chavesFaturadas]);
+    valorFaturadoTotal = concChaves.reduce((acc, c) => acc + num(c.valor_total), 0);
 
     return {
       pedido_id: pedido.id,

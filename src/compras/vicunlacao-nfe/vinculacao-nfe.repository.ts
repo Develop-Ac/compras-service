@@ -523,12 +523,12 @@ export class VinculacaoNfeRepository {
     return rows.map((r) => r.chave_nfe);
   }
 
-  /** Conciliação (status_erp + dt_entrada) das chaves informadas, do Postgres. */
+  /** Conciliação (status_erp + dt_entrada + valor_total) das chaves informadas, do Postgres. */
   async findConciliacaoByChaves(chaves: string[]) {
     if (!chaves.length) return [];
     return this.prisma.com_nfe_conciliacao.findMany({
       where: { chave_nfe: { in: chaves } },
-      select: { chave_nfe: true, status_erp: true, dt_entrada: true },
+      select: { chave_nfe: true, status_erp: true, dt_entrada: true, valor_total: true },
     });
   }
 
