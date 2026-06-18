@@ -35,6 +35,7 @@ interface ItemCotacao {
 /** Linha vinculada (item do XML casado com item da cotação) */
 export interface ItemVinculado {
   produto_xml: string;
+  cprod_xml: string | null;
   quantidade_xml: number | null;
   vuncom_xml: number | null;
   pro_codigo: string | number | null;
@@ -142,6 +143,7 @@ export class VinculacaoNfeService {
         if (codigo != null) proCodigosVinculados.add(String(codigo));
         vinculados.push({
           produto_xml: item.xProd,
+          cprod_xml: item.cProd ?? null,
           quantidade_xml: item.qCom,
           vuncom_xml: item.vUnCom,
           pro_codigo: codigo,
@@ -272,7 +274,7 @@ export class VinculacaoNfeService {
       itens.push({
         tipo: 'vinculado',
         produto_xml: v.produto_xml ?? null,
-        cprod_xml: null,
+        cprod_xml: v.cprod_xml ?? null,
         quantidade_xml: this.toDecimal(v.quantidade_xml),
         vuncom_xml: this.toDecimal(v.vuncom_xml),
         pro_codigo: v.pro_codigo == null ? null : Number(v.pro_codigo),
@@ -627,6 +629,7 @@ export class VinculacaoNfeService {
       if (it.tipo === 'vinculado') {
         vinculados.push({
           produto_xml: it.produto_xml ?? '',
+          cprod_xml: it.cprod_xml ?? null,
           quantidade_xml: num(it.quantidade_xml),
           vuncom_xml: num(it.vuncom_xml),
           pro_codigo: it.pro_codigo,
