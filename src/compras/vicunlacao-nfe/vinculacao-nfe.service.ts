@@ -219,7 +219,343 @@ export class VinculacaoNfeService {
     const totais: Record<string, number> = {};
     for (const g of porTipo) totais[g.tipo] = g._count._all;
 
-    return { ...vinculo, totais };
+    // Recalcula o status do pedido a partir da cobertura de itens vinculados.
+    const status = await this.recalcularStatusPedido(dto.pedido_id);
+
+    return { ...vinculo, totais, status };
+  }
+
+  /**
+   * Grava uma SUGESTÃO de vínculo (confirmado=false, origem='auto') a partir do
+   * resultado do motor de casamento (saída de `vincular`). Reutiliza a mesma
+   * gravação de itens do salvar manual, apenas trocando os flags. Não recalcula
+   * status aqui (o job marca 'Vínculo sugerido' separadamente).
+   */
+  async salvarSugestao(args: {
+    pedido_id: string;
+    pedido_cotacao: number;
+    for_codigo?: number | null;
+    chave_nfe: string;
+    emitente?: string | null;
+    data_emissao?: Date | null;
+    valor_total?: number | null;
+    resultado: Awaited<ReturnType<VinculacaoNfeService['vincular']>>;
+  }) {
+    const r = args.resultado;
+
+    const itens: Prisma.com_pedido_nfe_vinculo_itemCreateManyVinculoInput[] = [];
+
+    for (const v of r.vinculados) {
+      itens.push({
+        tipo: 'vinculado',
+        produto_xml: v.produto_xml ?? null,
+        cprod_xml: null,
+        quantidade_xml: this.toDecimal(v.quantidade_xml),
+        vuncom_xml: this.toDecimal(v.vuncom_xml),
+        pro_codigo: v.pro_codigo == null ? null : Number(v.pro_codigo),
+        pro_descricao: v.pro_descricao ?? null,
+        quantidade_cotacao: this.toDecimal(v.quantidade_cotacao),
+        quantidade_pedido: this.toDecimal(v.quantidade_pedido),
+        valor_pedido: this.toDecimal(v.valor_pedido),
+        match_campo: v.match_campo ?? null,
+        match_valor: v.match_valor ?? null,
+        origem: 'auto',
+      });
+    }
+
+    for (const x of r.xml_sem_vinculo) {
+      itens.push({
+        tipo: 'xml_sem_vinculo',
+        produto_xml: x.xProd ?? null,
+        cprod_xml: x.cProd ?? null,
+        quantidade_xml: this.toDecimal(x.qCom),
+        vuncom_xml: this.toDecimal(x.vUnCom),
+        pro_codigo: null,
+        pro_descricao: null,
+        quantidade_cotacao: null,
+        quantidade_pedido: null,
+        valor_pedido: null,
+        match_campo: null,
+        match_valor: null,
+        origem: 'auto',
+      });
+    }
+
+    for (const p of r.pedido_sem_vinculo) {
+      itens.push({
+        tipo: 'pedido_sem_vinculo',
+        produto_xml: null,
+        cprod_xml: null,
+        quantidade_xml: null,
+        vuncom_xml: null,
+        pro_codigo: p.pro_codigo == null ? null : Number(p.pro_codigo),
+        pro_descricao: p.pro_descricao ?? null,
+        quantidade_cotacao: null,
+        quantidade_pedido: this.toDecimal(p.quantidade),
+        valor_pedido: this.toDecimal(p.valor_unitario),
+        match_campo: null,
+        match_valor: null,
+        origem: 'auto',
+      });
+    }
+
+    const { vinculo } = await this.repo.salvarVinculo(
+      {
+        pedido_id: args.pedido_id,
+        pedido_cotacao: args.pedido_cotacao,
+        for_codigo: args.for_codigo ?? null,
+        chave_nfe: args.chave_nfe,
+        emitente: args.emitente ?? null,
+        data_emissao: args.data_emissao ?? null,
+        valor_total: this.toDecimal(args.valor_total),
+        usuario: null,
+      },
+      itens,
+      { confirmado: false, origem: 'auto' },
+    );
+
+    return vinculo;
+  }
+
+  // --------------------- Conferência por item (fechamento) -------------------
+
+  /**
+   * Monta a conferência de fechamento de um pedido: uma linha por item do
+   * pedido comparando o que foi pedido com o que foi faturado (somando todas as
+   * NF-e vinculadas confirmadas), mais os itens das NF-e que não estão no
+   * pedido. Somente leitura.
+   */
+  async conferenciaPorItem(pedidoId: string) {
+    const pedido = await this.repo.findPedidoParaConferencia(pedidoId);
+    if (!pedido) {
+      throw new NotFoundException(`Pedido ${pedidoId} não encontrado.`);
+    }
+
+    const num = (d: Prisma.Decimal | number | null | undefined): number => {
+      if (d == null) return 0;
+      const n = Number(d);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const itensPedido = await this.repo.findItensDoPedido(pedidoId);
+    const itensVinculo = await this.repo.findItensVinculadosConfirmados(pedidoId);
+
+    // Agrega o faturado (itens tipo='vinculado') por pro_codigo.
+    interface AggFaturado {
+      quantidade_faturada: number;
+      valor_faturado: number; // última vuncom_xml
+      chaves_nfe: Set<string>;
+    }
+    const faturadoPorCodigo = new Map<number, AggFaturado>();
+    const itensNfSemPedido: Array<{
+      produto_xml: string;
+      quantidade_xml: number;
+      vuncom_xml: number;
+      chave_nfe: string;
+    }> = [];
+
+    for (const it of itensVinculo) {
+      const chave = it.vinculo?.chave_nfe ?? '';
+      if (it.tipo === 'vinculado') {
+        if (it.pro_codigo == null) continue;
+        const cod = Number(it.pro_codigo);
+        const atual =
+          faturadoPorCodigo.get(cod) ??
+          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>() };
+        atual.quantidade_faturada += num(it.quantidade_xml);
+        // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
+        atual.valor_faturado = num(it.vuncom_xml);
+        if (chave) atual.chaves_nfe.add(chave);
+        faturadoPorCodigo.set(cod, atual);
+      } else if (it.tipo === 'xml_sem_vinculo') {
+        itensNfSemPedido.push({
+          produto_xml: it.produto_xml ?? '',
+          quantidade_xml: num(it.quantidade_xml),
+          vuncom_xml: num(it.vuncom_xml),
+          chave_nfe: chave,
+        });
+      }
+    }
+
+    let itensCompletos = 0;
+    let itensParciais = 0;
+    let itensNaoFaturados = 0;
+    let valorPedidoTotal = 0;
+    let valorFaturadoTotal = 0;
+
+    const itens = itensPedido.map((p) => {
+      const cod = Number(p.pro_codigo);
+      const quantidadePedido = num(p.quantidade);
+      const valorPedido = num(p.valor_unitario);
+      const agg = faturadoPorCodigo.get(cod);
+      const quantidadeFaturada = agg?.quantidade_faturada ?? 0;
+      const valorFaturado = agg?.valor_faturado ?? 0;
+      const chavesNfe = agg ? [...agg.chaves_nfe] : [];
+
+      let situacao: 'completo' | 'parcial' | 'nao_faturado';
+      if (quantidadeFaturada === 0) {
+        situacao = 'nao_faturado';
+        itensNaoFaturados++;
+      } else if (quantidadeFaturada >= quantidadePedido) {
+        situacao = 'completo';
+        itensCompletos++;
+      } else {
+        situacao = 'parcial';
+        itensParciais++;
+      }
+
+      valorPedidoTotal += valorPedido * quantidadePedido;
+      valorFaturadoTotal += valorFaturado * quantidadeFaturada;
+
+      return {
+        pro_codigo: cod,
+        pro_descricao: p.pro_descricao ?? '',
+        quantidade_pedido: quantidadePedido,
+        quantidade_faturada: quantidadeFaturada,
+        saldo: quantidadePedido - quantidadeFaturada,
+        valor_pedido: valorPedido,
+        valor_faturado: valorFaturado,
+        diferenca_valor: valorFaturado - valorPedido,
+        situacao,
+        chaves_nfe: chavesNfe,
+      };
+    });
+
+    return {
+      pedido_id: pedido.id,
+      status: pedido.status ?? '',
+      data_recebimento: pedido.data_recebimento
+        ? pedido.data_recebimento.toISOString()
+        : null,
+      totais: {
+        itens_pedido: itens.length,
+        itens_completos: itensCompletos,
+        itens_parciais: itensParciais,
+        itens_nao_faturados: itensNaoFaturados,
+        valor_pedido: valorPedidoTotal,
+        valor_faturado: valorFaturadoTotal,
+      },
+      itens,
+      itens_nf_sem_pedido: itensNfSemPedido,
+    };
+  }
+
+  // ----------------------- Status automático do pedido -----------------------
+
+  /**
+   * Recalcula o status do pedido a partir da cobertura dos seus itens
+   * (com_pedido_itens) por itens tipo='vinculado' de vínculos confirmados.
+   *
+   * - Todos os pro_codigo do pedido contemplados  -> 'Faturado'
+   * - Parte contemplada                            -> 'Faturado parcialmente'
+   * - Nenhum                                       -> mantém o status atual
+   *
+   * Nunca rebaixa 'Entregue' nem mexe em 'Cancelado'. Retorna o status final.
+   */
+  async recalcularStatusPedido(pedidoId: string): Promise<string | null> {
+    const pedido = await this.repo.findPedidoStatus(pedidoId);
+    if (!pedido) return null;
+
+    const statusAtual = pedido.status ?? null;
+
+    // Status que nunca devem ser rebaixados/alterados automaticamente.
+    if (statusAtual === 'Entregue' || statusAtual === 'Cancelado') {
+      return statusAtual;
+    }
+
+    const proCodigosPedido = await this.repo.findProCodigosDoPedido(pedidoId);
+
+    // Sem itens no pedido: nada a calcular, mantém o status atual.
+    if (!proCodigosPedido.length) return statusAtual;
+
+    const vinculados = await this.repo.findProCodigosVinculadosConfirmados(pedidoId);
+    const setVinculados = new Set(vinculados.map((c) => Number(c)));
+
+    const codigosPedido = new Set(proCodigosPedido.map((c) => Number(c)));
+    let cobertos = 0;
+    for (const c of codigosPedido) {
+      if (setVinculados.has(c)) cobertos++;
+    }
+
+    let novoStatus = statusAtual;
+    if (cobertos === 0) {
+      // Nenhum item contemplado: não mexe no status atual.
+      novoStatus = statusAtual;
+    } else if (cobertos >= codigosPedido.size) {
+      novoStatus = 'Faturado';
+    } else {
+      novoStatus = 'Faturado parcialmente';
+    }
+
+    if (novoStatus && novoStatus !== statusAtual) {
+      await this.repo.updatePedidoStatus(pedidoId, novoStatus);
+    }
+
+    return novoStatus;
+  }
+
+  /** Confirma um vínculo (confirmado=true) e recalcula o status do pedido. */
+  async confirmarVinculo(vinculoId: string) {
+    const v = await this.repo.findVinculoById(vinculoId);
+    if (!v) {
+      throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
+    }
+    await this.repo.setVinculoConfirmado(vinculoId, true);
+    const status = await this.recalcularStatusPedido(v.pedido_id);
+    return { id: vinculoId, confirmado: true, status };
+  }
+
+  /**
+   * Marca como 'Entregue' (gravando data_recebimento) os pedidos vinculados às
+   * NF-e que viraram LANCADA no ERP.
+   *
+   * Para cada chave: acha os vínculos CONFIRMADOS dessa chave e, para cada
+   * pedido_id, atualiza com_pedido (status='Entregue', a menos que já esteja
+   * 'Cancelado'; data_recebimento = dt_entrada se vier, senão now()).
+   * Idempotente: não reescreve se já estiver 'Entregue' com a mesma data.
+   */
+  async nfLancada(
+    lancadas: Array<{ chave_nfe: string; dt_entrada?: string | null }>,
+  ): Promise<{ atualizados: number; pedidos: string[] }> {
+    const pedidosAtualizados = new Set<string>();
+    let atualizados = 0;
+
+    for (const { chave_nfe, dt_entrada } of lancadas ?? []) {
+      const chave = String(chave_nfe ?? '').trim();
+      if (!chave) continue;
+
+      const dataRecebimento =
+        dt_entrada && !Number.isNaN(Date.parse(dt_entrada))
+          ? new Date(dt_entrada)
+          : new Date();
+
+      const pedidoIds = await this.repo.findPedidoIdsByChaveConfirmados(chave);
+      if (!pedidoIds.length) {
+        this.logger.log(`NF lançada ${chave} sem pedido vinculado (confirmado).`);
+        continue;
+      }
+
+      for (const pedidoId of pedidoIds) {
+        const pedido = await this.repo.findPedidoEntrega(pedidoId);
+        if (!pedido) continue;
+
+        // Nunca rebaixa/altera pedido Cancelado.
+        if (pedido.status === 'Cancelado') continue;
+
+        // Idempotência: já Entregue com a mesma data -> não reescreve.
+        const jaEntregue = pedido.status === 'Entregue';
+        const mesmaData =
+          pedido.data_recebimento != null &&
+          pedido.data_recebimento.getTime() === dataRecebimento.getTime();
+        if (jaEntregue && mesmaData) continue;
+
+        await this.repo.marcarPedidoEntregue(pedidoId, dataRecebimento);
+        atualizados++;
+        pedidosAtualizados.add(pedidoId);
+      }
+    }
+
+    return { atualizados, pedidos: [...pedidosAtualizados] };
   }
 
   /** Lista as NF-e já salvas de um pedido (cabeçalhos + totais por tipo). */
@@ -299,8 +635,11 @@ export class VinculacaoNfeService {
     if (!v) {
       throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
     }
+    const pedidoId = v.pedido_id;
     await this.repo.deleteVinculo(vinculoId);
-    return { id: vinculoId, removido: true };
+    // Recalcula o status após remover (pode rebaixar de Faturado p/ parcial, etc.).
+    const status = await this.recalcularStatusPedido(pedidoId);
+    return { id: vinculoId, removido: true, status };
   }
 
   // ----------------------------- XML da NF-e --------------------------------

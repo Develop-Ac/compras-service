@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { RouterModule } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -18,6 +19,7 @@ import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.mod
 
 @Module({
 imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
     OpenQueryHttpModule,
     CotacaoModule,

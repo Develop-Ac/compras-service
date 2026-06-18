@@ -196,7 +196,13 @@ export class VinculacaoNfeRepository {
       usuario?: string | null;
     },
     itens: Prisma.com_pedido_nfe_vinculo_itemCreateManyVinculoInput[],
+    opcoes?: { confirmado?: boolean; origem?: string },
   ) {
+    // Default: salvamento manual pelo usuário (confirmado=true, origem='manual').
+    // O job de auto-vínculo passa { confirmado: false, origem: 'auto' } para criar sugestões.
+    const confirmado = opcoes?.confirmado ?? true;
+    const origem = opcoes?.origem ?? 'manual';
+
     return this.prisma.$transaction(async (tx) => {
       const vinculo = await tx.com_pedido_nfe_vinculo.upsert({
         where: {
@@ -214,6 +220,8 @@ export class VinculacaoNfeRepository {
           data_emissao: cabecalho.data_emissao ?? null,
           valor_total: cabecalho.valor_total ?? null,
           usuario: cabecalho.usuario ?? null,
+          confirmado,
+          origem_vinculo: origem,
         },
         update: {
           pedido_cotacao: cabecalho.pedido_cotacao,
@@ -222,6 +230,8 @@ export class VinculacaoNfeRepository {
           data_emissao: cabecalho.data_emissao ?? null,
           valor_total: cabecalho.valor_total ?? null,
           usuario: cabecalho.usuario ?? null,
+          confirmado,
+          origem_vinculo: origem,
         },
       });
 
@@ -245,6 +255,71 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  // ------------------------- Auto-vínculo (sugestões) ------------------------
+
+  /**
+   * Pedidos "abertos" candidatos à varredura de auto-vínculo:
+   * status em ('Em analise', 'Faturado parcialmente') e SEM vínculo confirmado.
+   * (Cancelado / Entregue / 'Vínculo sugerido' ficam de fora pelo filtro de status.)
+   */
+  async findPedidosAbertosParaAutoVinculo(limite: number) {
+    return this.prisma.com_pedido.findMany({
+      where: {
+        status: { in: ['Em analise', 'Faturado parcialmente'] },
+        nfe_vinculos: { none: { confirmado: true } },
+      },
+      select: {
+        id: true,
+        pedido_cotacao: true,
+        for_codigo: true,
+        status: true,
+        created_at: true,
+      },
+      orderBy: { created_at: 'asc' },
+      take: limite,
+    });
+  }
+
+  /** Conta quantos itens (com_pedido_itens) distintos por pro_codigo o pedido tem. */
+  async countProCodigosDoPedido(pedidoId: string): Promise<number> {
+    const rows = await this.prisma.com_pedido_itens.findMany({
+      where: { pedido_id: pedidoId },
+      select: { pro_codigo: true },
+      distinct: ['pro_codigo'],
+    });
+    return rows.length;
+  }
+
+  /** Verifica se já existe QUALQUER vínculo (confirmado ou não) para o par pedido_id + chave_nfe. */
+  async existeVinculoParaPar(pedidoId: string, chaveNfe: string): Promise<boolean> {
+    const v = await this.prisma.com_pedido_nfe_vinculo.findUnique({
+      where: { pedido_id_chave_nfe: { pedido_id: pedidoId, chave_nfe: chaveNfe } },
+      select: { id: true },
+    });
+    return v != null;
+  }
+
+  /**
+   * Seta o status do pedido para 'Vínculo sugerido', SEM rebaixar
+   * 'Entregue' nem 'Cancelado'. Retorna o status final.
+   */
+  async marcarPedidoVinculoSugerido(pedidoId: string): Promise<string | null> {
+    const pedido = await this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { status: true },
+    });
+    if (!pedido) return null;
+    const atual = pedido.status ?? null;
+    if (atual === 'Entregue' || atual === 'Cancelado' || atual === 'Vínculo sugerido') {
+      return atual;
+    }
+    await this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { status: 'Vínculo sugerido' },
+    });
+    return 'Vínculo sugerido';
+  }
+
   /** Lista os cabeçalhos (sem itens) de um pedido + contagem de itens por tipo. */
   async findVinculosByPedido(pedidoId: string) {
     const cabecalhos = await this.prisma.com_pedido_nfe_vinculo.findMany({
@@ -256,6 +331,8 @@ export class VinculacaoNfeRepository {
         data_emissao: true,
         valor_total: true,
         updated_at: true,
+        confirmado: true,
+        origem_vinculo: true,
       },
       orderBy: { updated_at: 'desc' },
     });
@@ -291,6 +368,138 @@ export class VinculacaoNfeRepository {
   async deleteVinculo(vinculoId: string) {
     return this.prisma.com_pedido_nfe_vinculo.delete({
       where: { id: vinculoId },
+    });
+  }
+
+  // --------------------- Conferência por item (fechamento) -------------------
+
+  /** Lê o pedido (id, status, data_recebimento) para a conferência. */
+  async findPedidoParaConferencia(pedidoId: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { id: true, status: true, data_recebimento: true },
+    });
+  }
+
+  /**
+   * Itens do pedido (com_pedido_itens) usados na conferência:
+   * pro_codigo, pro_descricao, quantidade e valor_unitario.
+   */
+  async findItensDoPedido(pedidoId: string) {
+    return this.prisma.com_pedido_itens.findMany({
+      where: { pedido_id: pedidoId },
+      select: {
+        pro_codigo: true,
+        pro_descricao: true,
+        quantidade: true,
+        valor_unitario: true,
+      },
+      orderBy: [{ pro_codigo: 'asc' }],
+    });
+  }
+
+  /**
+   * Itens dos vínculos CONFIRMADOS de um pedido, já com a chave_nfe do
+   * cabeçalho. Usado para agregar quantidade/valor faturado e listar os itens
+   * do XML sem pedido.
+   */
+  async findItensVinculadosConfirmados(pedidoId: string) {
+    return this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        vinculo: { pedido_id: pedidoId, confirmado: true },
+      },
+      select: {
+        tipo: true,
+        produto_xml: true,
+        quantidade_xml: true,
+        vuncom_xml: true,
+        pro_codigo: true,
+        vinculo: { select: { chave_nfe: true } },
+      },
+    });
+  }
+
+  // ----------------------- Status automático do pedido -----------------------
+
+  /** Lê o pedido (id + status atual). */
+  async findPedidoStatus(pedidoId: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { id: true, status: true },
+    });
+  }
+
+  /** pro_codigo distintos dos itens do pedido (com_pedido_itens). */
+  async findProCodigosDoPedido(pedidoId: string): Promise<number[]> {
+    const rows = await this.prisma.com_pedido_itens.findMany({
+      where: { pedido_id: pedidoId },
+      select: { pro_codigo: true },
+    });
+    return rows.map((r) => r.pro_codigo);
+  }
+
+  /**
+   * pro_codigo dos itens tipo='vinculado' pertencentes a vínculos CONFIRMADOS
+   * do pedido. Usado para calcular a cobertura de faturamento.
+   */
+  async findProCodigosVinculadosConfirmados(pedidoId: string): Promise<number[]> {
+    const rows = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        pro_codigo: { not: null },
+        vinculo: { pedido_id: pedidoId, confirmado: true },
+      },
+      select: { pro_codigo: true },
+    });
+    return rows
+      .map((r) => r.pro_codigo)
+      .filter((c): c is number => c != null);
+  }
+
+  /** Marca um vínculo como confirmado. */
+  async setVinculoConfirmado(vinculoId: string, confirmado: boolean) {
+    return this.prisma.com_pedido_nfe_vinculo.update({
+      where: { id: vinculoId },
+      data: { confirmado },
+    });
+  }
+
+  /** Atualiza o status de um pedido. */
+  async updatePedidoStatus(pedidoId: string, status: string) {
+    return this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { status },
+    });
+  }
+
+  // ----------------------- NF lançada -> Entregue ----------------------------
+
+  /**
+   * pedido_id distintos dos vínculos CONFIRMADOS de uma chave_nfe.
+   * Usado para marcar os pedidos como 'Entregue' quando a NF é lançada no ERP.
+   */
+  async findPedidoIdsByChaveConfirmados(chaveNfe: string): Promise<string[]> {
+    const rows = await this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { chave_nfe: chaveNfe, confirmado: true },
+      select: { pedido_id: true },
+      distinct: ['pedido_id'],
+    });
+    return rows.map((r) => r.pedido_id);
+  }
+
+  /** Lê o pedido (id, status, data_recebimento) para a marcação de Entregue. */
+  async findPedidoEntrega(pedidoId: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { id: true, status: true, data_recebimento: true },
+    });
+  }
+
+  /** Marca o pedido como Entregue gravando a data de recebimento. */
+  async marcarPedidoEntregue(pedidoId: string, dataRecebimento: Date) {
+    return this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { status: 'Entregue', data_recebimento: dataRecebimento },
     });
   }
 }
