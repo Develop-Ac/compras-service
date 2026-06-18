@@ -418,24 +418,25 @@ export class VinculacaoNfeService {
       const valorFaturado = agg?.valor_faturado ?? 0;
       const chavesNfe = agg ? [...agg.chaves_nfe] : [];
 
-      // Divergências (com tolerância p/ ponto flutuante / centavos).
-      const qtdDiverge = Math.abs(quantidadeFaturada - quantidadePedido) > 1e-6;
+      // Divergência de valor (com tolerância p/ ponto flutuante / centavos).
       const valorDiverge = Math.abs(valorFaturado - valorPedido) > 0.005;
 
       let situacao: 'completo' | 'parcial' | 'nao_faturado' | 'divergente';
       if (quantidadeFaturada === 0) {
         situacao = 'nao_faturado';
         itensNaoFaturados++;
-      } else if (qtdDiverge && valorDiverge) {
-        // Diverge em valor E quantidade -> divergente.
+      } else if (valorDiverge || quantidadeFaturada > quantidadePedido) {
+        // Valor diferente OU quantidade faturada a mais -> divergente.
         situacao = 'divergente';
         itensDivergentes++;
-      } else if (quantidadeFaturada >= quantidadePedido) {
-        situacao = 'completo';
-        itensCompletos++;
-      } else {
+      } else if (quantidadeFaturada < quantidadePedido) {
+        // Faturado a menos (valor ok) -> parcial (ainda pendente).
         situacao = 'parcial';
         itensParciais++;
+      } else {
+        // Quantidade exata e valor ok -> completo.
+        situacao = 'completo';
+        itensCompletos++;
       }
 
       valorPedidoTotal += valorPedido * quantidadePedido;
