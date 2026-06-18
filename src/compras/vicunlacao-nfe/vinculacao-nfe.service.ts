@@ -148,10 +148,18 @@ export class VinculacaoNfeService {
       (p) => !proCodigosVinculados.has(String(p.pro_codigo)),
     );
 
+    // Emitente: NF lançada vinda do NF_ENTRADA_XML não traz NOME_EMITENTE;
+    // completa a partir da conciliação (Postgres).
+    let emitente = nfeRow.NOME_EMITENTE ?? null;
+    if (!emitente) {
+      const conc = await this.repo.findConciliacaoByChave(nfe);
+      emitente = conc?.emitente ?? null;
+    }
+
     return {
       pedido_cotacao: pedido,
       chave_nfe: nfe,
-      emitente: nfeRow.NOME_EMITENTE,
+      emitente,
       totais: {
         itens_xml: itensXml.length,
         itens_cotacao: itensCotacao.length,
@@ -482,6 +490,26 @@ export class VinculacaoNfeService {
       // Nenhum item contemplado: não mexe no status atual.
       novoStatus = statusAtual;
     } else if (cobertos >= codigosPedido.size) {
+      // 100% coberto. Se TODAS as notas vinculadas confirmadas já estão lançadas
+      // no ERP -> 'Entregue' (data_recebimento = maior dt_entrada). Senão -> 'Faturado'.
+      const chaves = await this.repo.findChavesVinculadasConfirmadas(pedidoId);
+      const concs = await this.repo.findConciliacaoByChaves(chaves);
+      const porChave = new Map(concs.map((c) => [c.chave_nfe, c]));
+      const todasLancadas =
+        chaves.length > 0 &&
+        chaves.every((c) => porChave.get(c)?.status_erp === 'LANCADA');
+
+      if (todasLancadas) {
+        const datas = chaves
+          .map((c) => porChave.get(c)?.dt_entrada)
+          .filter((d): d is Date => d instanceof Date);
+        const dataRecebimento = datas.length
+          ? new Date(Math.max(...datas.map((d) => d.getTime())))
+          : new Date();
+        await this.repo.marcarPedidoEntregue(pedidoId, dataRecebimento);
+        return 'Entregue';
+      }
+
       novoStatus = 'Faturado';
     } else {
       novoStatus = 'Faturado parcialmente';

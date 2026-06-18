@@ -15,9 +15,10 @@ export class NotaFiscalController {
 
     @Get('disponiveis')
     @ApiOperation({ summary: 'Lista as NF-e disponíveis (sem XML_COMPLETO) para o modal de seleção' })
+    @ApiQuery({ name: 'pedidoId', type: String, required: false, description: 'com_pedido.id — quando informado, inclui também as NF-e já lançadas com emissão posterior à data do pedido' })
     @ApiResponse({ status: 200, description: 'Lista de NF-e disponíveis que possuem XML, sem o XML_COMPLETO' })
-    async getNfeDisponiveis() {
-    return this.notaFiscalService.getNfeDisponiveis();
+    async getNfeDisponiveis(@Query('pedidoId') pedidoId?: string) {
+    return this.notaFiscalService.getNfeDisponiveis(pedidoId);
     }
 
     @Get('danfe')

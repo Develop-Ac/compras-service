@@ -436,6 +436,7 @@ model com_nfe_conciliacao {
   status_analise           String                     @default("Tributado - Verificado")
   valor_guia               Float                      @default(0.0)
   status_erp               String                     @default("PENDENTE")
+  dt_entrada               DateTime?
   updated_at               DateTime
   created_at               DateTime                   @default(now())
   tipo_operacao            Int                        @default(0)

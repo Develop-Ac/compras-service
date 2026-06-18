@@ -23,7 +23,7 @@ export class NotaFiscalService {
     return data;
   }
 
-  async getNfeDisponiveis() {
+  async getNfeDisponiveis(pedidoId?: string) {
     const data = (await this.notaFiscalRepository.fetchNfeDisponiveis()) as Array<
       Record<string, any>
     >;
@@ -34,21 +34,66 @@ export class NotaFiscalService {
       .map((r) => (r?.CHAVE_NFE == null ? null : String(r.CHAVE_NFE)))
       .filter((c): c is string => !!c);
 
+    let valorPorChave = new Map<string, number>();
     if (chaves.length) {
       const conc = await this.prisma.com_nfe_conciliacao.findMany({
         where: { chave_nfe: { in: chaves } },
         select: { chave_nfe: true, valor_total: true },
       });
-      const valorPorChave = new Map(conc.map((c) => [c.chave_nfe, c.valor_total]));
-      for (const row of data) {
-        const chave = row?.CHAVE_NFE == null ? null : String(row.CHAVE_NFE);
-        row.VALOR_TOTAL_NF = chave != null && valorPorChave.has(chave)
-          ? valorPorChave.get(chave)
-          : null;
-      }
+      valorPorChave = new Map(conc.map((c) => [c.chave_nfe, c.valor_total]));
     }
 
-    return data;
+    for (const row of data) {
+      const chave = row?.CHAVE_NFE == null ? null : String(row.CHAVE_NFE);
+      row.VALOR_TOTAL_NF =
+        chave != null && valorPorChave.has(chave) ? valorPorChave.get(chave) : null;
+      row.STATUS_ERP = 'PENDENTE';
+    }
+
+    // Sem pedido de referência: mantém o comportamento antigo (apenas pendentes).
+    if (!pedidoId) return data;
+
+    // Com pedido: inclui também as NF-e já LANCADA no ERP cuja emissão é
+    // POSTERIOR à data do pedido (uma NF do pedido é emitida depois dele).
+    const pedido = await this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { created_at: true },
+    });
+    const dataPedido = pedido?.created_at ?? null;
+
+    const chavesPendentes = new Set(chaves);
+
+    const lancadas = await this.prisma.com_nfe_conciliacao.findMany({
+      where: {
+        status_erp: 'LANCADA',
+        ...(dataPedido ? { data_emissao: { gt: dataPedido } } : {}),
+      },
+      select: {
+        chave_nfe: true,
+        emitente: true,
+        cnpj_emitente: true,
+        data_emissao: true,
+        valor_total: true,
+        tipo_operacao_desc: true,
+      },
+      orderBy: { data_emissao: 'desc' },
+      take: 2000,
+    });
+
+    const lancadasMapeadas = lancadas
+      .filter((l) => !chavesPendentes.has(l.chave_nfe))
+      .map((l) => ({
+        EMPRESA: 1,
+        CHAVE_NFE: l.chave_nfe,
+        CPF_CNPJ_EMITENTE: l.cnpj_emitente,
+        NOME_EMITENTE: l.emitente,
+        DATA_EMISSAO: l.data_emissao,
+        TIPO_OPERACAO_DESC: l.tipo_operacao_desc,
+        VALOR_TOTAL_NF: l.valor_total,
+        STATUS_ERP: 'LANCADA',
+      }));
+
+    return [...data, ...lancadasMapeadas];
   }
 
   private decodeXmlFromField(xmlCompleto: string): string {

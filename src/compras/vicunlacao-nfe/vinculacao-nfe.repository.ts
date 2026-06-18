@@ -69,13 +69,57 @@ export class VinculacaoNfeRepository {
 
     const tsql = `SELECT * FROM OPENQUERY([${LINKED_SERVER}], '${this.fbLiteral(fbSql)}')`;
 
+    let row: NfeXmlRow | null = null;
     try {
       const rows = await this.mssql.query<NfeXmlRow>(tsql, {}, { timeout: 120_000, allowZeroRows: true });
-      return rows[0] || null;
+      row = rows[0] || null;
     } catch (err: any) {
       this.logger.error(`[OPENQUERY nfe] ${err?.message || err}`);
       throw err;
     }
+
+    // Caminho feliz: nota ainda na NFE_DISTRIBUICAO com XML.
+    if (row?.XML_COMPLETO) return row;
+
+    // Fallback: NF já lançada pode não estar mais na NFE_DISTRIBUICAO. O XML, porém,
+    // permanece em NF_ENTRADA_XML — busca direto por lá (emitente/data podem vir nulos,
+    // o service completa o emitente a partir de com_nfe_conciliacao).
+    const fbSql2 = `
+      SELECT
+        X.EMPRESA,
+        X.CHAVE_NFE,
+        X.XML_COMPLETO
+      FROM NF_ENTRADA_XML X
+      WHERE X.EMPRESA   = ${empresa}
+        AND X.CHAVE_NFE = '${this.fbLiteral(chaveNfe)}'
+    `;
+    const tsql2 = `SELECT * FROM OPENQUERY([${LINKED_SERVER}], '${this.fbLiteral(fbSql2)}')`;
+
+    try {
+      const rows2 = await this.mssql.query<NfeXmlRow>(tsql2, {}, { timeout: 120_000, allowZeroRows: true });
+      const xmlRow = rows2[0];
+      if (xmlRow?.XML_COMPLETO) {
+        return {
+          EMPRESA: xmlRow.EMPRESA ?? row?.EMPRESA ?? empresa,
+          CHAVE_NFE: xmlRow.CHAVE_NFE ?? chaveNfe,
+          NOME_EMITENTE: row?.NOME_EMITENTE ?? null,
+          DATA_EMISSAO: row?.DATA_EMISSAO ?? null,
+          XML_COMPLETO: xmlRow.XML_COMPLETO,
+        };
+      }
+    } catch (err: any) {
+      this.logger.error(`[OPENQUERY nfe-entrada-xml] ${err?.message || err}`);
+    }
+
+    return row;
+  }
+
+  /** Lê uma linha de conciliação (Postgres) pela chave — usado p/ completar emitente de NF lançada. */
+  async findConciliacaoByChave(chaveNfe: string) {
+    return this.prisma.com_nfe_conciliacao.findUnique({
+      where: { chave_nfe: chaveNfe },
+      select: { chave_nfe: true, emitente: true, status_erp: true, dt_entrada: true },
+    });
   }
 
   /**
@@ -454,6 +498,25 @@ export class VinculacaoNfeRepository {
     return rows
       .map((r) => r.pro_codigo)
       .filter((c): c is number => c != null);
+  }
+
+  /** chave_nfe distintas dos vínculos CONFIRMADOS de um pedido. */
+  async findChavesVinculadasConfirmadas(pedidoId: string): Promise<string[]> {
+    const rows = await this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { pedido_id: pedidoId, confirmado: true },
+      select: { chave_nfe: true },
+      distinct: ['chave_nfe'],
+    });
+    return rows.map((r) => r.chave_nfe);
+  }
+
+  /** Conciliação (status_erp + dt_entrada) das chaves informadas, do Postgres. */
+  async findConciliacaoByChaves(chaves: string[]) {
+    if (!chaves.length) return [];
+    return this.prisma.com_nfe_conciliacao.findMany({
+      where: { chave_nfe: { in: chaves } },
+      select: { chave_nfe: true, status_erp: true, dt_entrada: true },
+    });
   }
 
   /** Marca um vínculo como confirmado. */
