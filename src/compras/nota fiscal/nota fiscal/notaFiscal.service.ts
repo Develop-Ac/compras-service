@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { NotaFiscalRepository } from './notaFiscal.repository';
+import { PrismaService } from '../../../prisma/prisma.service';
 import axios from 'axios';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
@@ -12,10 +13,41 @@ import { promises as fsp } from 'node:fs';
 
 @Injectable()
 export class NotaFiscalService {
-  constructor(private readonly notaFiscalRepository: NotaFiscalRepository) {}
+  constructor(
+    private readonly notaFiscalRepository: NotaFiscalRepository,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async getNfeDistribuicao() {
     const data = await this.notaFiscalRepository.fetchNfeDistribuicao();
+    return data;
+  }
+
+  async getNfeDisponiveis() {
+    const data = (await this.notaFiscalRepository.fetchNfeDisponiveis()) as Array<
+      Record<string, any>
+    >;
+
+    // Enriquece com o valor total da NF a partir de com_nfe_conciliacao (Postgres),
+    // cruzando pela chave de acesso. Notas sem registro de conciliação ficam sem valor.
+    const chaves = data
+      .map((r) => (r?.CHAVE_NFE == null ? null : String(r.CHAVE_NFE)))
+      .filter((c): c is string => !!c);
+
+    if (chaves.length) {
+      const conc = await this.prisma.com_nfe_conciliacao.findMany({
+        where: { chave_nfe: { in: chaves } },
+        select: { chave_nfe: true, valor_total: true },
+      });
+      const valorPorChave = new Map(conc.map((c) => [c.chave_nfe, c.valor_total]));
+      for (const row of data) {
+        const chave = row?.CHAVE_NFE == null ? null : String(row.CHAVE_NFE);
+        row.VALOR_TOTAL_NF = chave != null && valorPorChave.has(chave)
+          ? valorPorChave.get(chave)
+          : null;
+      }
+    }
+
     return data;
   }
 

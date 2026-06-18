@@ -3,9 +3,10 @@ import { NotaFiscalController } from './notaFiscal.controller';
 import { NotaFiscalService } from './notaFiscal.service';
 import { NotaFiscalRepository } from './notaFiscal.repository';
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
+import { PrismaService } from '../../../prisma/prisma.service';
 
 @Module({
   controllers: [NotaFiscalController],
-  providers: [NotaFiscalService, NotaFiscalRepository, OpenQueryService],
+  providers: [NotaFiscalService, NotaFiscalRepository, OpenQueryService, PrismaService],
 })
 export class NotaFiscalModule {}

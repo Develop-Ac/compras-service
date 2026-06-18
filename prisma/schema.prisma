@@ -163,6 +163,7 @@ model com_pedido {
   status         String?            @db.VarChar(50)
   categoriaFrete String?            @db.VarChar(255)
   itens          com_pedido_itens[]
+  nfe_vinculos   com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
@@ -195,6 +196,51 @@ model com_pedido_itens {
   @@unique([pedido_id, pro_codigo, for_codigo])
   @@index([pedido_id])
   @@index([pedido_id, pro_codigo, for_codigo], map: "idx_com_pedido_itens_pedido_produto_sug")
+}
+
+model com_pedido_nfe_vinculo {
+  id              String     @id @default(cuid())
+  pedido_id       String     // FK com_pedido.id (contexto da tela do pedido)
+  pedido_cotacao  Int
+  for_codigo      Int?
+  chave_nfe       String     @db.VarChar(44)
+  emitente        String?
+  data_emissao    DateTime?
+  valor_total     Decimal?   @db.Decimal(15, 2)
+  usuario         String?    @db.VarChar(120)
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+  pedido          com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  itens           com_pedido_nfe_vinculo_item[]
+
+  @@unique([pedido_id, chave_nfe])
+  @@index([pedido_id])
+  @@index([chave_nfe])
+}
+
+model com_pedido_nfe_vinculo_item {
+  id                  String   @id @default(cuid())
+  vinculo_id          String
+  tipo                String   @db.VarChar(20) // 'vinculado' | 'xml_sem_vinculo' | 'pedido_sem_vinculo'
+  // dados do lado XML
+  produto_xml         String?
+  cprod_xml           String?
+  quantidade_xml      Decimal? @db.Decimal(15, 4)
+  vuncom_xml          Decimal? @db.Decimal(15, 4)
+  // dados do lado pedido/cotação
+  pro_codigo          Int?
+  pro_descricao       String?
+  quantidade_cotacao  Decimal? @db.Decimal(15, 4)
+  quantidade_pedido   Decimal? @db.Decimal(15, 4)
+  valor_pedido        Decimal? @db.Decimal(15, 4)
+  // metadados do casamento
+  match_campo         String?  @db.VarChar(60)
+  match_valor         String?
+  origem              String?  @db.VarChar(20) // 'auto' | 'manual'
+  created_at          DateTime @default(now())
+  vinculo             com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
+
+  @@index([vinculo_id])
 }
 
 model est_contagem {

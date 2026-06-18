@@ -1,9 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as zlib from 'zlib';
 import {
   CotacaoItemRow,
   VinculacaoNfeRepository,
 } from './vinculacao-nfe.repository';
+import { SalvarVinculoDto } from './dto/salvar-vinculo.dto';
 
 /** Item extraído do XML da NF-e */
 export interface ItemXml {
@@ -162,6 +164,143 @@ export class VinculacaoNfeService {
       xml_sem_vinculo: xmlSemVinculo,
       pedido_sem_vinculo: pedidoSemVinculo,
     };
+  }
+
+  // -------------------------- Persistência do vínculo ------------------------
+
+  /** Converte número (ou null/undefined) para Prisma.Decimal aceito pelo client. */
+  private toDecimal(v: number | null | undefined): Prisma.Decimal | null {
+    if (v == null || !Number.isFinite(Number(v))) return null;
+    return new Prisma.Decimal(v);
+  }
+
+  /**
+   * Salva (upsert) a conferência de uma NF-e num pedido: cabeçalho + itens
+   * tipados, substituindo o snapshot anterior (mesmo par pedido_id + chave).
+   */
+  async salvarVinculo(dto: SalvarVinculoDto) {
+    const dataEmissao =
+      dto.data_emissao && !Number.isNaN(Date.parse(dto.data_emissao))
+        ? new Date(dto.data_emissao)
+        : null;
+
+    const itens: Prisma.com_pedido_nfe_vinculo_itemCreateManyVinculoInput[] = (
+      dto.itens ?? []
+    ).map((it) => ({
+      tipo: it.tipo,
+      produto_xml: it.produto_xml ?? null,
+      cprod_xml: it.cprod_xml ?? null,
+      quantidade_xml: this.toDecimal(it.quantidade_xml),
+      vuncom_xml: this.toDecimal(it.vuncom_xml),
+      pro_codigo: it.pro_codigo ?? null,
+      pro_descricao: it.pro_descricao ?? null,
+      quantidade_cotacao: this.toDecimal(it.quantidade_cotacao),
+      quantidade_pedido: this.toDecimal(it.quantidade_pedido),
+      valor_pedido: this.toDecimal(it.valor_pedido),
+      match_campo: it.match_campo ?? null,
+      match_valor: it.match_valor ?? null,
+      origem: it.origem ?? null,
+    }));
+
+    const { vinculo, porTipo } = await this.repo.salvarVinculo(
+      {
+        pedido_id: dto.pedido_id,
+        pedido_cotacao: dto.pedido_cotacao,
+        for_codigo: dto.for_codigo ?? null,
+        chave_nfe: dto.chave_nfe,
+        emitente: dto.emitente ?? null,
+        data_emissao: dataEmissao,
+        valor_total: this.toDecimal(dto.valor_total),
+        usuario: dto.usuario ?? null,
+      },
+      itens,
+    );
+
+    const totais: Record<string, number> = {};
+    for (const g of porTipo) totais[g.tipo] = g._count._all;
+
+    return { ...vinculo, totais };
+  }
+
+  /** Lista as NF-e já salvas de um pedido (cabeçalhos + totais por tipo). */
+  async listarVinculosDoPedido(pedidoId: string) {
+    return this.repo.findVinculosByPedido(pedidoId);
+  }
+
+  /**
+   * Carrega uma conferência salva e remonta o MESMO shape de VinculacaoResponse
+   * (totais + listas vinculados / xml_sem_vinculo / pedido_sem_vinculo).
+   */
+  async carregarVinculo(vinculoId: string) {
+    const v = await this.repo.findVinculoById(vinculoId);
+    if (!v) {
+      throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
+    }
+
+    const num = (d: Prisma.Decimal | null): number | null =>
+      d == null ? null : Number(d);
+
+    const vinculados: ItemVinculado[] = [];
+    const xmlSemVinculo: ItemXml[] = [];
+    const pedidoSemVinculo: any[] = [];
+
+    for (const it of v.itens) {
+      if (it.tipo === 'vinculado') {
+        vinculados.push({
+          produto_xml: it.produto_xml ?? '',
+          quantidade_xml: num(it.quantidade_xml),
+          vuncom_xml: num(it.vuncom_xml),
+          pro_codigo: it.pro_codigo,
+          pro_descricao: it.pro_descricao,
+          quantidade_cotacao: num(it.quantidade_cotacao),
+          quantidade_pedido: num(it.quantidade_pedido),
+          valor_pedido: num(it.valor_pedido),
+          match_campo: it.match_campo ?? '',
+          match_valor: it.match_valor,
+          origem: (it.origem as any) ?? 'firebird',
+        });
+      } else if (it.tipo === 'xml_sem_vinculo') {
+        xmlSemVinculo.push({
+          cProd: it.cprod_xml ?? '',
+          xProd: it.produto_xml ?? '',
+          qCom: num(it.quantidade_xml),
+          vUnCom: num(it.vuncom_xml),
+          vProd: null,
+        });
+      } else {
+        pedidoSemVinculo.push({
+          pro_codigo: it.pro_codigo,
+          pro_descricao: it.pro_descricao,
+          quantidade: num(it.quantidade_pedido),
+          valor_unitario: num(it.valor_pedido),
+        });
+      }
+    }
+
+    return {
+      vinculo_id: v.id,
+      pedido_cotacao: v.pedido_cotacao,
+      chave_nfe: v.chave_nfe,
+      emitente: v.emitente,
+      totais: {
+        vinculados: vinculados.length,
+        xml_sem_vinculo: xmlSemVinculo.length,
+        pedido_sem_vinculo: pedidoSemVinculo.length,
+      },
+      vinculados,
+      xml_sem_vinculo: xmlSemVinculo,
+      pedido_sem_vinculo: pedidoSemVinculo,
+    };
+  }
+
+  /** Remove um vínculo salvo (cascade apaga os itens). */
+  async removerVinculo(vinculoId: string) {
+    const v = await this.repo.findVinculoById(vinculoId);
+    if (!v) {
+      throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
+    }
+    await this.repo.deleteVinculo(vinculoId);
+    return { id: vinculoId, removido: true };
   }
 
   // ----------------------------- XML da NF-e --------------------------------

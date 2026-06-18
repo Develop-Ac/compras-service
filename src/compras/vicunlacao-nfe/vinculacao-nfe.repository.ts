@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { OpenQueryService as MssqlOpenQuery } from '../../shared/database/openquery/openquery.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -173,6 +174,123 @@ export class VinculacaoNfeRepository {
         for_codigo: true,
       },
       orderBy: [{ emissao: 'desc' }, { id: 'desc' }],
+    });
+  }
+
+  // ----------------------- Persistência do vínculo NF-e ----------------------
+
+  /**
+   * Upsert do cabeçalho do vínculo (por @@unique([pedido_id, chave_nfe])) e
+   * substituição dos itens (deleteMany + createMany) numa única transação.
+   * Retorna o cabeçalho salvo com a contagem de itens por tipo.
+   */
+  async salvarVinculo(
+    cabecalho: {
+      pedido_id: string;
+      pedido_cotacao: number;
+      for_codigo?: number | null;
+      chave_nfe: string;
+      emitente?: string | null;
+      data_emissao?: Date | null;
+      valor_total?: Prisma.Decimal | number | null;
+      usuario?: string | null;
+    },
+    itens: Prisma.com_pedido_nfe_vinculo_itemCreateManyVinculoInput[],
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const vinculo = await tx.com_pedido_nfe_vinculo.upsert({
+        where: {
+          pedido_id_chave_nfe: {
+            pedido_id: cabecalho.pedido_id,
+            chave_nfe: cabecalho.chave_nfe,
+          },
+        },
+        create: {
+          pedido_id: cabecalho.pedido_id,
+          pedido_cotacao: cabecalho.pedido_cotacao,
+          for_codigo: cabecalho.for_codigo ?? null,
+          chave_nfe: cabecalho.chave_nfe,
+          emitente: cabecalho.emitente ?? null,
+          data_emissao: cabecalho.data_emissao ?? null,
+          valor_total: cabecalho.valor_total ?? null,
+          usuario: cabecalho.usuario ?? null,
+        },
+        update: {
+          pedido_cotacao: cabecalho.pedido_cotacao,
+          for_codigo: cabecalho.for_codigo ?? null,
+          emitente: cabecalho.emitente ?? null,
+          data_emissao: cabecalho.data_emissao ?? null,
+          valor_total: cabecalho.valor_total ?? null,
+          usuario: cabecalho.usuario ?? null,
+        },
+      });
+
+      await tx.com_pedido_nfe_vinculo_item.deleteMany({
+        where: { vinculo_id: vinculo.id },
+      });
+
+      if (itens.length) {
+        await tx.com_pedido_nfe_vinculo_item.createMany({
+          data: itens.map((it) => ({ ...it, vinculo_id: vinculo.id })),
+        });
+      }
+
+      const porTipo = await tx.com_pedido_nfe_vinculo_item.groupBy({
+        by: ['tipo'],
+        where: { vinculo_id: vinculo.id },
+        _count: { _all: true },
+      });
+
+      return { vinculo, porTipo };
+    });
+  }
+
+  /** Lista os cabeçalhos (sem itens) de um pedido + contagem de itens por tipo. */
+  async findVinculosByPedido(pedidoId: string) {
+    const cabecalhos = await this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { pedido_id: pedidoId },
+      select: {
+        id: true,
+        chave_nfe: true,
+        emitente: true,
+        data_emissao: true,
+        valor_total: true,
+        updated_at: true,
+      },
+      orderBy: { updated_at: 'desc' },
+    });
+
+    if (!cabecalhos.length) return [];
+
+    const ids = cabecalhos.map((c) => c.id);
+    const totais = await this.prisma.com_pedido_nfe_vinculo_item.groupBy({
+      by: ['vinculo_id', 'tipo'],
+      where: { vinculo_id: { in: ids } },
+      _count: { _all: true },
+    });
+
+    const mapa = new Map<string, Record<string, number>>();
+    for (const t of totais) {
+      const atual = mapa.get(t.vinculo_id) ?? {};
+      atual[t.tipo] = t._count._all;
+      mapa.set(t.vinculo_id, atual);
+    }
+
+    return cabecalhos.map((c) => ({ ...c, totais: mapa.get(c.id) ?? {} }));
+  }
+
+  /** Carrega um vínculo (cabeçalho + itens). */
+  async findVinculoById(vinculoId: string) {
+    return this.prisma.com_pedido_nfe_vinculo.findUnique({
+      where: { id: vinculoId },
+      include: { itens: true },
+    });
+  }
+
+  /** Remove um vínculo (cascade apaga os itens). */
+  async deleteVinculo(vinculoId: string) {
+    return this.prisma.com_pedido_nfe_vinculo.delete({
+      where: { id: vinculoId },
     });
   }
 }

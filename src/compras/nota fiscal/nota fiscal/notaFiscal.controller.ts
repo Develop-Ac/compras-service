@@ -13,6 +13,13 @@ export class NotaFiscalController {
     return this.notaFiscalService.getNfeDistribuicao();
     }
 
+    @Get('disponiveis')
+    @ApiOperation({ summary: 'Lista as NF-e disponíveis (sem XML_COMPLETO) para o modal de seleção' })
+    @ApiResponse({ status: 200, description: 'Lista de NF-e disponíveis que possuem XML, sem o XML_COMPLETO' })
+    async getNfeDisponiveis() {
+    return this.notaFiscalService.getNfeDisponiveis();
+    }
+
     @Get('danfe')
     @ApiOperation({ summary: 'Gera o DANFE em PDF para a chave NFe informada' })
     @ApiResponse({ status: 200, description: 'PDF gerado com sucesso', content: { 'application/pdf': {} } })
