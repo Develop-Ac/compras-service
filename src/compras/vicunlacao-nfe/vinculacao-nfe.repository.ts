@@ -123,6 +123,19 @@ export class VinculacaoNfeRepository {
   }
 
   /**
+   * XML completo salvo no Postgres (com_nfe_conciliacao). É a fonte confiável dos
+   * itens: o OPENQUERY do Firebird trunca XML_COMPLETO num teto fixo (~11 KB),
+   * cortando NF-e maiores; aqui o XML está íntegro (gzip+base64).
+   */
+  async findConciliacaoXmlByChave(chaveNfe: string): Promise<string | null> {
+    const row = await this.prisma.com_nfe_conciliacao.findUnique({
+      where: { chave_nfe: chaveNfe },
+      select: { xml_completo: true },
+    });
+    return row?.xml_completo ?? null;
+  }
+
+  /**
    * Busca itens de um pedido de cotação no Firebird.
    */
   async findCotacaoItens(pedido: number, empresa = 1): Promise<CotacaoItemRow[]> {

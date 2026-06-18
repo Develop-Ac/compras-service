@@ -73,15 +73,30 @@ export class VinculacaoNfeService {
    * vincula e devolve as 3 listas (vinculados, XML sem vínculo, pedido sem vínculo).
    */
   async vincular(pedido: number, nfe: string) {
-    // 1) XML da NF-e
-    const nfeRow = await this.repo.findXmlByChave(nfe);
-    if (!nfeRow) {
+    // 1) XML da NF-e — Postgres PRIMEIRO.
+    // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
+    // (íntegro). O OPENQUERY do Firebird, por outro lado, trunca XML_COMPLETO num
+    // teto fixo (~11 KB), zerando os itens de NF-e maiores. Por isso usamos o
+    // Postgres como fonte primária e o Firebird apenas como fallback.
+    let itensXml = [] as ReturnType<typeof this.parseItensNfe>;
+    let nfeRow: Awaited<ReturnType<typeof this.repo.findXmlByChave>> = null;
+
+    const xmlPg = await this.repo.findConciliacaoXmlByChave(nfe);
+    if (xmlPg) {
+      itensXml = this.parseItensNfe(xmlPg);
+    }
+
+    // Fallback: não achou no Postgres (ou veio sem itens) -> busca no Firebird.
+    if (!itensXml.length) {
+      nfeRow = await this.repo.findXmlByChave(nfe);
+      if (nfeRow?.XML_COMPLETO != null) {
+        itensXml = this.parseItensNfe(nfeRow.XML_COMPLETO);
+      }
+    }
+
+    if (!xmlPg && !nfeRow) {
       throw new NotFoundException(`Nenhuma NF-e encontrada para a chave ${nfe}.`);
     }
-    if (nfeRow.XML_COMPLETO == null) {
-      throw new NotFoundException('XML_COMPLETO veio nulo para a chave informada.');
-    }
-    const itensXml = this.parseItensNfe(nfeRow.XML_COMPLETO);
 
     // 2) Itens da cotação (Firebird) + com_cotacao_itens_for (Postgres)
     const [itensFb, itensPg] = await Promise.all([
@@ -148,9 +163,9 @@ export class VinculacaoNfeService {
       (p) => !proCodigosVinculados.has(String(p.pro_codigo)),
     );
 
-    // Emitente: NF lançada vinda do NF_ENTRADA_XML não traz NOME_EMITENTE;
-    // completa a partir da conciliação (Postgres).
-    let emitente = nfeRow.NOME_EMITENTE ?? null;
+    // Emitente: o caminho Postgres não traz NOME_EMITENTE (nfeRow nulo) e a NF
+    // lançada via NF_ENTRADA_XML também não; completa a partir da conciliação.
+    let emitente = nfeRow?.NOME_EMITENTE ?? null;
     if (!emitente) {
       const conc = await this.repo.findConciliacaoByChave(nfe);
       emitente = conc?.emitente ?? null;
