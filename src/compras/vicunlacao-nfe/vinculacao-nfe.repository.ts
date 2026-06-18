@@ -548,6 +548,24 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  /**
+   * Volta o pedido ao estado pré-vinculação ('Finalizado'), limpando a
+   * data_recebimento. Não altera pedidos 'Cancelado'. Retorna o status final.
+   */
+  async reverterPedidoParaFinalizado(pedidoId: string): Promise<string | null> {
+    const pedido = await this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { status: true },
+    });
+    if (!pedido) return null;
+    if (pedido.status === 'Cancelado') return pedido.status;
+    await this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { status: 'Finalizado', data_recebimento: null },
+    });
+    return 'Finalizado';
+  }
+
   // ----------------------- NF lançada -> Entregue ----------------------------
 
   /**

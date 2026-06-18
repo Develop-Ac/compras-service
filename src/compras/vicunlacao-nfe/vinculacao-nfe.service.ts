@@ -405,6 +405,7 @@ export class VinculacaoNfeService {
     let itensCompletos = 0;
     let itensParciais = 0;
     let itensNaoFaturados = 0;
+    let itensDivergentes = 0;
     let valorPedidoTotal = 0;
     let valorFaturadoTotal = 0;
 
@@ -417,10 +418,18 @@ export class VinculacaoNfeService {
       const valorFaturado = agg?.valor_faturado ?? 0;
       const chavesNfe = agg ? [...agg.chaves_nfe] : [];
 
-      let situacao: 'completo' | 'parcial' | 'nao_faturado';
+      // Divergências (com tolerância p/ ponto flutuante / centavos).
+      const qtdDiverge = Math.abs(quantidadeFaturada - quantidadePedido) > 1e-6;
+      const valorDiverge = Math.abs(valorFaturado - valorPedido) > 0.005;
+
+      let situacao: 'completo' | 'parcial' | 'nao_faturado' | 'divergente';
       if (quantidadeFaturada === 0) {
         situacao = 'nao_faturado';
         itensNaoFaturados++;
+      } else if (qtdDiverge && valorDiverge) {
+        // Diverge em valor E quantidade -> divergente.
+        situacao = 'divergente';
+        itensDivergentes++;
       } else if (quantidadeFaturada >= quantidadePedido) {
         situacao = 'completo';
         itensCompletos++;
@@ -457,6 +466,7 @@ export class VinculacaoNfeService {
         itens_completos: itensCompletos,
         itens_parciais: itensParciais,
         itens_nao_faturados: itensNaoFaturados,
+        itens_divergentes: itensDivergentes,
         valor_pedido: valorPedidoTotal,
         valor_faturado: valorFaturadoTotal,
       },
@@ -683,8 +693,15 @@ export class VinculacaoNfeService {
     }
     const pedidoId = v.pedido_id;
     await this.repo.deleteVinculo(vinculoId);
-    // Recalcula o status após remover (pode rebaixar de Faturado p/ parcial, etc.).
-    const status = await this.recalcularStatusPedido(pedidoId);
+
+    // Se não restou nenhum vínculo confirmado, o pedido volta ao estado
+    // pré-vinculação: 'Finalizado' (mesmo que estivesse 'Entregue'/'Faturado').
+    // Restando outros vínculos, recalcula normalmente (Faturado/parcial/Entregue).
+    const restantes = await this.repo.findChavesVinculadasConfirmadas(pedidoId);
+    const status = restantes.length
+      ? await this.recalcularStatusPedido(pedidoId)
+      : await this.repo.reverterPedidoParaFinalizado(pedidoId);
+
     return { id: vinculoId, removido: true, status };
   }
 
