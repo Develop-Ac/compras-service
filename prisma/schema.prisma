@@ -873,6 +873,16 @@ model com_fornecedores {
   for_nome   String @db.VarChar(255)
 }
 
+model com_fornecedor_relacionamento {
+  id         String    @id @db.VarChar(191)
+  group_id   String    @db.VarChar(100)
+  for_codigo Int       @unique(map: "uq_forn_rel_for_codigo")
+  principal  Boolean   @default(false)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([group_id], map: "idx_forn_rel_group")
+}
+
 model ven_carteira_cliente {
   id             String    @id
   cli_codigo     Int       @unique(map: "uq_ven_carteira_cliente_cli")

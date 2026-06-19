@@ -6,6 +6,7 @@ import {
   VinculacaoNfeRepository,
 } from './vinculacao-nfe.repository';
 import { SalvarVinculoDto } from './dto/salvar-vinculo.dto';
+import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.service';
 
 /** Item extraído do XML da NF-e */
 export interface ItemXml {
@@ -67,7 +68,10 @@ type ColunaCotacao = (typeof COLUNAS_COTACAO)[number];
 export class VinculacaoNfeService {
   private readonly logger = new Logger(VinculacaoNfeService.name);
 
-  constructor(private readonly repo: VinculacaoNfeRepository) {}
+  constructor(
+    private readonly repo: VinculacaoNfeRepository,
+    private readonly grupo: FornecedorGrupoService,
+  ) {}
 
   /**
    * Pipeline completo: busca XML da NF-e, busca itens da cotação e do pedido,
@@ -104,6 +108,9 @@ export class VinculacaoNfeService {
       this.repo.findCotacaoItens(pedido),
       this.repo.findCotacaoItensFor(pedido),
     ]);
+    // Preenche ref_fornecedor em branco usando a referência do grupo (matriz/filiais),
+    // para que a NF-e de um relacionado case mesmo sem a referência gravada nesta cotação.
+    await this.grupo.enriquecerRefsEmBranco(itensPg as any);
     const itensCotacao = this.unificarItensCotacao(itensFb, itensPg);
 
     // 3) Itens do pedido (com_pedido / com_pedido_itens) — mapa por pro_codigo

@@ -7,11 +7,13 @@ import { VinculacaoNfeService } from './vinculacao-nfe.service';
 import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
 import { AutoVinculoService } from './auto-vinculo.service';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
+import { FornecedorGrupoModule } from '../fornecedor-grupo/fornecedor-grupo.module';
 
 @Module({
   // OpenQueryModule -> OpenQueryService (Firebird via MSSQL); OpenQueryHttpModule
   // exporta ConsultaOpenqueryRepository (fornecedor por for_codigo); PrismaModule -> Prisma.
-  imports: [OpenQueryModule, OpenQueryHttpModule, PrismaModule],
+  // FornecedorGrupoModule -> compartilhamento de referências entre fornecedores relacionados.
+  imports: [OpenQueryModule, OpenQueryHttpModule, PrismaModule, FornecedorGrupoModule],
   controllers: [VinculacaoNfeController],
   providers: [
     VinculacaoNfeService,

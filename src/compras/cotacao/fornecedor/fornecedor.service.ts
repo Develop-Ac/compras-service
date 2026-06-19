@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { CreateFornecedorDto, CreateFornecedorItemDto } from './fornecedor.dto';
 import { FornecedorRepository } from './fornecedor.repository';
+import { FornecedorGrupoService } from '../../fornecedor-grupo/fornecedor-grupo.service';
 
 @Injectable()
 export class FornecedorService {
@@ -12,6 +13,7 @@ export class FornecedorService {
 
   constructor(
     private readonly repository: FornecedorRepository,
+    private readonly grupo: FornecedorGrupoService,
     private readonly http: HttpService,
     private readonly config: ConfigService,
   ) {}
@@ -145,7 +147,7 @@ export class FornecedorService {
       PRO_CODIGO: row.PRO_CODIGO as number | string, // se no banco for TEXT, string é segura
       PRO_DESCRICAO: row.PRO_DESCRICAO as string,
       MAR_DESCRICAO: (row.MAR_DESCRICAO as string | null) ?? null,
-      REFERENCIA: await this.repository.findRefForByCotacaoAndFornecedor(row.PRO_CODIGO, dto.for_codigo, row.REFERENCIA ?? ""),
+      REFERENCIA: await this.grupo.getReferenciaGrupo(row.PRO_CODIGO, dto.for_codigo, row.REFERENCIA ?? ""),
       UNIDADE: (row.UNIDADE as string | null) ?? null,
       QUANTIDADE: Number(row.QUANTIDADE),
       QTD_SUGERIDA: Number(row.QTD_SUGERIDA),
