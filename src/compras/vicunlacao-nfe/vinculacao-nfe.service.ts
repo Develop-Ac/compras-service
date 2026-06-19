@@ -902,7 +902,10 @@ export class VinculacaoNfeService {
 
   private normRef(s: any): string {
     if (s == null) return '';
-    return String(s).replace(/\s+/g, '').toUpperCase();
+    // Remove espaços, padroniza maiúsculas e ignora zeros à esquerda — o cProd da NF
+    // costuma vir preenchido com zeros (ex.: 000000000004904246) enquanto a referência
+    // do produto é 4904246. Mantém ao menos 1 caractere (ex.: '0000' -> '0').
+    return String(s).replace(/\s+/g, '').toUpperCase().replace(/^0+(?=.)/, '');
   }
 
   /** Extrai o "código" do início do xProd, ex.: 'FCA1130DS PARA-BRISAS ...' -> 'FCA1130DS'. */
