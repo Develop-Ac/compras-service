@@ -228,4 +228,93 @@ export class FornecedorGrupoRepository {
     const exc = new Set(excluir);
     return rows.map((r) => this.mapForn(r)).filter((f) => !exc.has(f.for_codigo));
   }
+
+  /** Cadastro completo do fornecedor (Stage_Fornecedores) — aba "Fornecedor". */
+  async fornecedorCompleto(forCodigo: number) {
+    if (!Number.isFinite(forCodigo)) return null;
+    const rows = await this.mssql.query<any>(
+      `SELECT TOP 1 FOR_CODIGO, FOR_NOME, NOME_FANTASIA, CPF_CNPJ, RG_IE, ENDERECO, NUMERO, BAIRRO,
+              CIDADE, UF, CEP, FONE, FAX, CELULAR, EMAIL, CONTATO, INATIVO
+       FROM [BI].[dbo].[Stage_Fornecedores]
+       WHERE EMPRESA = @empresa AND FOR_CODIGO = @cod`,
+      { empresa: EMPRESA, cod: forCodigo },
+      { allowZeroRows: true },
+    );
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      for_codigo: Number(r.FOR_CODIGO),
+      for_nome: r.FOR_NOME ?? null,
+      nome_fantasia: r.NOME_FANTASIA ?? null,
+      cpf_cnpj: r.CPF_CNPJ ?? null,
+      rg_ie: r.RG_IE ?? null,
+      endereco: r.ENDERECO ?? null,
+      numero: r.NUMERO ?? null,
+      bairro: r.BAIRRO ?? null,
+      cidade: r.CIDADE ?? null,
+      uf: r.UF ?? null,
+      cep: r.CEP ?? null,
+      fone: r.FONE ?? null,
+      celular: r.CELULAR ?? null,
+      email: r.EMAIL ?? null,
+      contato: r.CONTATO ?? null,
+      inativo: String(r.INATIVO ?? '').toUpperCase() === 'S',
+    };
+  }
+
+  /**
+   * Resolve o CLIENTE (ERP ao vivo, Firebird) de mesmo CNPJ do fornecedor.
+   * A garantia é contas a receber, então é chaveada pelo cli_codigo. Retorna null se não houver.
+   */
+  async clienteDoFornecedor(
+    forCodigo: number,
+  ): Promise<{ cli_codigo: number; cli_nome: string | null; cpf_cnpj: string | null } | null> {
+    const fr = await this.mssql.query<any>(
+      `SELECT TOP 1 CPF_CNPJ FROM [BI].[dbo].[Stage_Fornecedores] WHERE EMPRESA=@empresa AND FOR_CODIGO=@cod`,
+      { empresa: EMPRESA, cod: forCodigo },
+      { allowZeroRows: true },
+    );
+    // CLIENTES e FORNECEDORES guardam o CNPJ no mesmo formato (ex.: 61.736.732/0035-88) -> match exato.
+    const cnpj = String(fr[0]?.CPF_CNPJ ?? '').trim();
+    if (soDigitos(cnpj).length < 11) return null;
+    const cnpjFb = cnpj.replace(/'/g, "''"); // escapa p/ o literal Firebird
+
+    const fb = `SELECT FIRST 1 c.cli_codigo, c.cli_nome, c.cpf_cnpj
+                FROM clientes c
+                WHERE c.cpf_cnpj = '${cnpjFb}'`;
+    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
+    const rows = await this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+    const r = rows[0];
+    if (!r) return null;
+    return { cli_codigo: Number(r.CLI_CODIGO), cli_nome: r.CLI_NOME ?? null, cpf_cnpj: r.CPF_CNPJ ?? null };
+  }
+
+  /** Busca CLIENTES no ERP (ao vivo) por nome/CNPJ/código — para vincular manualmente na aba Garantia. */
+  async buscarClientes(
+    termo: string,
+  ): Promise<Array<{ cli_codigo: number; cli_nome: string | null; cpf_cnpj: string | null; cidade: string | null; uf: string | null }>> {
+    const t = (termo ?? '').trim();
+    if (!t) return [];
+    const esc = t.replace(/'/g, "''"); // escapa p/ o literal Firebird
+    const up = esc.toUpperCase();
+    const code = /^\d+$/.test(t) ? Number(t) : -1;
+
+    const fb = `SELECT FIRST 50 c.cli_codigo, c.cli_nome, c.cpf_cnpj, c.cidade, c.uf
+                FROM clientes c
+                WHERE c.empresa = ${EMPRESA} AND (
+                  UPPER(c.cli_nome) LIKE '%${up}%'
+                  OR c.cpf_cnpj LIKE '%${esc}%'
+                  OR c.cli_codigo = ${code}
+                )
+                ORDER BY c.cli_nome`;
+    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
+    const rows = await this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+    return rows.map((r) => ({
+      cli_codigo: Number(r.CLI_CODIGO),
+      cli_nome: r.CLI_NOME ?? null,
+      cpf_cnpj: r.CPF_CNPJ ?? null,
+      cidade: r.CIDADE ?? null,
+      uf: r.UF ?? null,
+    }));
+  }
 }

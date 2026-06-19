@@ -33,6 +33,21 @@ export class FornecedorGrupoService {
     return this.repo.buscarFornecedores(termo);
   }
 
+  /** Cadastro completo do fornecedor (aba "Fornecedor"). */
+  async getFornecedorCompleto(forCodigo: number) {
+    return this.repo.fornecedorCompleto(forCodigo);
+  }
+
+  /** Cliente de mesmo CNPJ do fornecedor (aba "Garantia" — chaveia a config). null se não houver. */
+  async getClienteDoFornecedor(forCodigo: number) {
+    return this.repo.clienteDoFornecedor(forCodigo);
+  }
+
+  /** Busca CLIENTES no ERP para vincular manualmente quando não há match por CNPJ. */
+  async buscarClientes(termo: string) {
+    return this.repo.buscarClientes(termo);
+  }
+
   /** Sugere filiais (mesma raiz de CNPJ) a partir de um fornecedor âncora. */
   async sugerirFiliais(forCodigo: number, jaNoGrupo: number[] = []): Promise<FornecedorErp[]> {
     const [ancora] = await this.repo.fornecedoresPorCodigo([forCodigo]);

@@ -22,6 +22,30 @@ export class FornecedorGrupoController {
     return { data, total: data.length };
   }
 
+  @Get('fornecedor/:for_codigo')
+  @ApiOperation({ summary: 'Cadastro completo de um fornecedor (Stage_Fornecedores) — aba Fornecedor' })
+  async fornecedor(@Param('for_codigo') forCodigo: string) {
+    const n = Number(forCodigo);
+    if (!Number.isFinite(n)) return null;
+    return this.service.getFornecedorCompleto(n);
+  }
+
+  @Get('cliente/:for_codigo')
+  @ApiOperation({ summary: 'Cliente de mesmo CNPJ do fornecedor (chaveia a config de garantia)' })
+  async cliente(@Param('for_codigo') forCodigo: string) {
+    const n = Number(forCodigo);
+    if (!Number.isFinite(n)) return { cliente: null };
+    const cliente = await this.service.getClienteDoFornecedor(n);
+    return { cliente };
+  }
+
+  @Get('clientes')
+  @ApiOperation({ summary: 'Busca CLIENTES no ERP (nome/CNPJ/código) para vincular manualmente na garantia' })
+  async clientes(@Query('q') q: string) {
+    const data = await this.service.buscarClientes(q ?? '');
+    return { data, total: data.length };
+  }
+
   @Get('sugestoes/:for_codigo')
   @ApiOperation({ summary: 'Sugere filiais (mesma raiz de CNPJ) para um fornecedor' })
   async sugestoes(@Param('for_codigo') forCodigo: string, @Query('excluir') excluir?: string) {
