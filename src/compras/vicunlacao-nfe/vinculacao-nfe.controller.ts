@@ -13,6 +13,7 @@ import { AutoVinculoService } from './auto-vinculo.service';
 import { VincularNfeDto } from './dto/vincular-nfe.dto';
 import { SalvarVinculoDto } from './dto/salvar-vinculo.dto';
 import { NfLancadaDto } from './dto/nf-lancada.dto';
+import { VincularItemDto } from './dto/vincular-item.dto';
 
 @ApiTags('Compras - Vinculação NF-e')
 @Controller('vinculacao-nfe')
@@ -74,6 +75,23 @@ export class VinculacaoNfeController {
   @ApiResponse({ status: 200, description: 'Pedidos atualizados para Entregue.' })
   async nfLancada(@Body() body: NfLancadaDto) {
     return this.service.nfLancada(body?.lancadas ?? []);
+  }
+
+  // POST /compras/vinculacao-nfe/item/:itemId/vincular
+  // Rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('item/:itemId/vincular')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Vincula manualmente, pela conferência, um item da NF (sem pedido) a um produto do pedido',
+  })
+  @ApiParam({ name: 'itemId', description: 'com_pedido_nfe_vinculo_item.id (item tipo xml_sem_vinculo)' })
+  @ApiBody({ type: VincularItemDto })
+  @ApiResponse({ status: 200, description: 'Item vinculado e status do pedido recalculado.' })
+  async vincularItemConferencia(
+    @Param('itemId') itemId: string,
+    @Body() body: VincularItemDto,
+  ) {
+    return this.service.vincularItemConferencia(itemId, body);
   }
 
   // GET /compras/vinculacao-nfe/pedido/:pedidoId

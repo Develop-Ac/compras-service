@@ -466,12 +466,47 @@ export class VinculacaoNfeRepository {
         vinculo: { pedido_id: pedidoId, confirmado: true },
       },
       select: {
+        id: true,
         tipo: true,
         produto_xml: true,
+        cprod_xml: true,
         quantidade_xml: true,
         vuncom_xml: true,
         pro_codigo: true,
         vinculo: { select: { chave_nfe: true } },
+      },
+    });
+  }
+
+  /** Lê um item de vínculo + o pedido a que pertence (via cabeçalho). */
+  async findVinculoItemComPedido(itemId: string) {
+    return this.prisma.com_pedido_nfe_vinculo_item.findUnique({
+      where: { id: itemId },
+      select: { id: true, tipo: true, vinculo: { select: { pedido_id: true } } },
+    });
+  }
+
+  /** Converte um item (xml_sem_vinculo) em 'vinculado', casando com um item do pedido. */
+  async vincularItem(
+    itemId: string,
+    dados: {
+      pro_codigo: number;
+      pro_descricao?: string | null;
+      quantidade_pedido?: number | null;
+      valor_pedido?: number | null;
+    },
+  ) {
+    return this.prisma.com_pedido_nfe_vinculo_item.update({
+      where: { id: itemId },
+      data: {
+        tipo: 'vinculado',
+        pro_codigo: dados.pro_codigo,
+        pro_descricao: dados.pro_descricao ?? null,
+        quantidade_pedido: dados.quantidade_pedido ?? null,
+        valor_pedido: dados.valor_pedido ?? null,
+        match_campo: 'Manual (conferência)',
+        match_valor: 'Vínculo manual',
+        origem: 'manual',
       },
     });
   }

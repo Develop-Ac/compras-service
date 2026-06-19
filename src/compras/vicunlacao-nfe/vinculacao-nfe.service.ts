@@ -374,7 +374,9 @@ export class VinculacaoNfeService {
     const faturadoPorCodigo = new Map<number, AggFaturado>();
     const chavesFaturadas = new Set<string>();
     const itensNfSemPedido: Array<{
+      id: string;
       produto_xml: string;
+      cprod_xml: string | null;
       quantidade_xml: number;
       vuncom_xml: number;
       chave_nfe: string;
@@ -396,7 +398,9 @@ export class VinculacaoNfeService {
         faturadoPorCodigo.set(cod, atual);
       } else if (it.tipo === 'xml_sem_vinculo') {
         itensNfSemPedido.push({
+          id: it.id,
           produto_xml: it.produto_xml ?? '',
+          cprod_xml: it.cprod_xml ?? null,
           quantidade_xml: num(it.quantidade_xml),
           vuncom_xml: num(it.vuncom_xml),
           chave_nfe: chave,
@@ -481,6 +485,28 @@ export class VinculacaoNfeService {
       itens,
       itens_nf_sem_pedido: itensNfSemPedido,
     };
+  }
+
+  /**
+   * Vincula manualmente, pela tela de conferência, um item da NF que estava sem
+   * pedido (tipo='xml_sem_vinculo') a um produto do pedido. Recalcula o status.
+   */
+  async vincularItemConferencia(
+    itemId: string,
+    dados: {
+      pro_codigo: number;
+      pro_descricao?: string | null;
+      quantidade_pedido?: number | null;
+      valor_pedido?: number | null;
+    },
+  ) {
+    const item = await this.repo.findVinculoItemComPedido(itemId);
+    if (!item) {
+      throw new NotFoundException(`Item de vínculo ${itemId} não encontrado.`);
+    }
+    await this.repo.vincularItem(itemId, dados);
+    const status = await this.recalcularStatusPedido(item.vinculo.pedido_id);
+    return { id: itemId, vinculado: true, status };
   }
 
   // ----------------------- Status automático do pedido -----------------------
