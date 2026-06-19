@@ -4,6 +4,7 @@ import { VinculacaoNfeService } from './vinculacao-nfe.service';
 import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
 import { ConsultaOpenqueryRepository } from '../cotacao/openquery/openquery.repository';
+import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.service';
 
 /** Cobertura mínima (pro_codigos distintos vinculados / nº itens do pedido) p/ sugerir. */
 const COBERTURA_MINIMA = 0.3;
@@ -20,8 +21,9 @@ interface NfeDisponivel {
 /**
  * Job periódico de vínculo automático SUGERIDO.
  *
- * Varre pedidos abertos, busca NF-e candidatas (fornecedor por CNPJ ou nome
- * similar + data de emissão posterior ao pedido), roda o motor de casamento e,
+ * Varre pedidos abertos, busca NF-e candidatas (emitente com qualquer CNPJ do
+ * GRUPO do fornecedor — matriz/filiais — ou nome similar, + data de emissão
+ * posterior ao pedido), roda o motor de casamento e,
  * se a cobertura >= 30%, grava uma sugestão (confirmado=false, origem='auto') e
  * marca o pedido como 'Vínculo sugerido'. Nada é confirmado automaticamente.
  */
@@ -34,6 +36,7 @@ export class AutoVinculoService {
     private readonly repo: VinculacaoNfeRepository,
     private readonly notasRepo: NotaFiscalRepository,
     private readonly fornecedorRepo: ConsultaOpenqueryRepository,
+    private readonly grupo: FornecedorGrupoService,
   ) {}
 
   /**
@@ -128,13 +131,18 @@ export class AutoVinculoService {
     const cnpjForn = this.soDigitos(fornecedor?.cpf_cnpj ?? null);
     const nomeForn = fornecedor?.for_nome ?? null;
 
-    // Candidatas: fornecedor bate (CNPJ igual OU nome similar) E data de emissão > pedido.
+    // CNPJs do GRUPO do fornecedor (matriz/filiais relacionadas). Inclui o próprio.
+    // Permite vincular NF emitida por um relacionado (ex.: pedido p/ CNPJ X, NF do CNPJ Y do mesmo grupo).
+    const cnpjsGrupo = new Set<string>(await this.grupo.cnpjsDoGrupo(pedido.for_codigo));
+    if (cnpjForn) cnpjsGrupo.add(cnpjForn);
+
+    // Candidatas: emitente é do grupo (qualquer CNPJ do grupo) OU nome similar E data de emissão > pedido.
     const candidatas = notas.filter((n) => {
       const dataEmissao = this.toDate(n.DATA_EMISSAO);
       if (!dataEmissao || dataEmissao <= pedido.created_at) return false;
 
       const cnpjNf = this.soDigitos(n.CPF_CNPJ_EMITENTE);
-      const cnpjBate = !!cnpjForn && !!cnpjNf && cnpjForn === cnpjNf;
+      const cnpjBate = !!cnpjNf && cnpjsGrupo.has(cnpjNf);
       const nomeBate = this.nomeSimilar(nomeForn, n.NOME_EMITENTE);
       return cnpjBate || nomeBate;
     });

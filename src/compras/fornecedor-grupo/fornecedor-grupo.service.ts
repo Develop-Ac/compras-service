@@ -90,6 +90,18 @@ export class FornecedorGrupoService {
     return this.repo.expandGrupo(forCodigo);
   }
 
+  /** CNPJs (só dígitos) de todos os fornecedores do grupo do for_codigo (inclui ele mesmo). */
+  async cnpjsDoGrupo(forCodigo: number): Promise<string[]> {
+    const grupo = await this.repo.expandGrupo(forCodigo);
+    const dados = await this.repo.fornecedoresPorCodigo(grupo);
+    const set = new Set<string>();
+    for (const d of dados) {
+      const dig = String(d.cpf_cnpj ?? '').replace(/\D/g, '');
+      if (dig) set.add(dig);
+    }
+    return [...set];
+  }
+
   /**
    * Referência do fornecedor para um produto, considerando o grupo:
    * 1) referência própria (mais recente não-vazia); 2) referência de um relacionado; 3) fallback.
