@@ -365,11 +365,13 @@ export class VinculacaoNfeService {
     const itensPedido = await this.repo.findItensDoPedido(pedidoId);
     const itensVinculo = await this.repo.findItensVinculadosConfirmados(pedidoId);
 
-    // Agrega o faturado (itens tipo='vinculado') por pro_codigo.
+    // Agrega o faturado (itens tipo='vinculado') por pro_codigo, guardando a
+    // contribuição de cada NF (qtd + chave) para depois separar entregue x pendente.
     interface AggFaturado {
       quantidade_faturada: number;
       valor_faturado: number; // última vuncom_xml
       chaves_nfe: Set<string>;
+      contribs: Array<{ qtd: number; chave: string }>;
     }
     const faturadoPorCodigo = new Map<number, AggFaturado>();
     const chavesFaturadas = new Set<string>();
@@ -390,11 +392,15 @@ export class VinculacaoNfeService {
         const cod = Number(it.pro_codigo);
         const atual =
           faturadoPorCodigo.get(cod) ??
-          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>() };
-        atual.quantidade_faturada += num(it.quantidade_xml);
+          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [] };
+        const q = num(it.quantidade_xml);
+        atual.quantidade_faturada += q;
         // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
         atual.valor_faturado = num(it.vuncom_xml);
-        if (chave) atual.chaves_nfe.add(chave);
+        if (chave) {
+          atual.chaves_nfe.add(chave);
+          atual.contribs.push({ qtd: q, chave });
+        }
         faturadoPorCodigo.set(cod, atual);
       } else if (it.tipo === 'xml_sem_vinculo') {
         itensNfSemPedido.push({
@@ -408,12 +414,18 @@ export class VinculacaoNfeService {
       }
     }
 
+    // Conciliação das chaves: status lançada (entregue) + valor total da NF.
+    const concChaves = await this.repo.findConciliacaoByChaves([...chavesFaturadas]);
+    const chaveLancada = new Map<string, boolean>(
+      concChaves.map((c) => [c.chave_nfe, c.status_erp === 'LANCADA']),
+    );
+    const valorFaturadoTotal = concChaves.reduce((acc, c) => acc + num(c.valor_total), 0);
+
     let itensCompletos = 0;
     let itensParciais = 0;
     let itensNaoFaturados = 0;
     let itensDivergentes = 0;
     let valorPedidoTotal = 0;
-    let valorFaturadoTotal = 0;
 
     const itens = itensPedido.map((p) => {
       const cod = Number(p.pro_codigo);
@@ -423,6 +435,31 @@ export class VinculacaoNfeService {
       const quantidadeFaturada = agg?.quantidade_faturada ?? 0;
       const valorFaturado = agg?.valor_faturado ?? 0;
       const chavesNfe = agg ? [...agg.chaves_nfe] : [];
+
+      // Separa o que já foi ENTREGUE (NF lançada) do que está apenas FATURADO
+      // (NF vinculada mas ainda não lançada).
+      let qEntregue = 0;
+      let qFaturadoPendente = 0;
+      for (const c of agg?.contribs ?? []) {
+        if (chaveLancada.get(c.chave)) qEntregue += c.qtd;
+        else qFaturadoPendente += c.qtd;
+      }
+
+      // Status do produto (acumula quando há entrega parcial + faturamento).
+      const statusProduto: string[] = [];
+      if (quantidadeFaturada === 0) {
+        statusProduto.push('Não faturado');
+      } else if (qEntregue >= quantidadePedido) {
+        statusProduto.push('Entregue');
+      } else {
+        if (qEntregue > 0) statusProduto.push('Entregue parcial');
+        if (qFaturadoPendente > 0) {
+          statusProduto.push(
+            qEntregue + qFaturadoPendente >= quantidadePedido ? 'Faturado' : 'Faturado parcial',
+          );
+        }
+        if (statusProduto.length === 0) statusProduto.push('Não faturado');
+      }
 
       // Divergência de valor (com tolerância p/ ponto flutuante / centavos).
       const valorDiverge = Math.abs(valorFaturado - valorPedido) > 0.005;
@@ -452,20 +489,16 @@ export class VinculacaoNfeService {
         pro_descricao: p.pro_descricao ?? '',
         quantidade_pedido: quantidadePedido,
         quantidade_faturada: quantidadeFaturada,
+        quantidade_entregue: qEntregue,
         saldo: quantidadePedido - quantidadeFaturada,
         valor_pedido: valorPedido,
         valor_faturado: valorFaturado,
         diferenca_valor: valorFaturado - valorPedido,
         situacao,
+        status_produto: statusProduto,
         chaves_nfe: chavesNfe,
       };
     });
-
-    // "Valor Faturado" do resumo (cards superiores) = valor TOTAL da(s) NF(s)
-    // vinculada(s) (vNF real, de com_nfe_conciliacao), e não a soma dos itens
-    // casados. A coluna por item continua sendo o valor unitário da NF.
-    const concChaves = await this.repo.findConciliacaoByChaves([...chavesFaturadas]);
-    valorFaturadoTotal = concChaves.reduce((acc, c) => acc + num(c.valor_total), 0);
 
     return {
       pedido_id: pedido.id,
