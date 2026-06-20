@@ -1206,6 +1206,10 @@ export class VinculacaoNfeService {
     'TRAS.': 'TRASEIRO',
     'DIR.': 'DIREITO',
     'ESQ.': 'ESQUERDO',
+    // C/P e C/PISCA = COM PISCA (chaves mais longas são processadas primeiro,
+    // então 'C/PISCA' é resolvida antes de 'C/P' e ambas antes de 'C/').
+    'C/PISCA': ' COM PISCA ',
+    'C/P': ' COM PISCA ',
     'C/': ' COM ',
     'S/': ' SEM ',
     'P/': ' PARA ',
@@ -1225,6 +1229,9 @@ export class VinculacaoNfeService {
       // ('LANT.TRAS.SANDERO' -> 'LANT.TRASEIROSANDERO', perdendo o token SANDERO).
       t = t.split(k).join(` ${VinculacaoNfeService.ABREV[k]} `);
     }
+    // Cola hífen entre letra e dígito (nome de modelo): 'S-10' -> 'S10'. NÃO toca
+    // dígito-dígito ('11-14'), preservando faixas de ano.
+    t = t.replace(/([A-Z])-(\d)/g, '$1$2').replace(/(\d)-([A-Z])/g, '$1$2');
     t = t.replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     return t;
   }
@@ -1239,6 +1246,8 @@ export class VinculacaoNfeService {
     LANT: 'LANTERNA', LAN: 'LANTERNA', LANTERNA: 'LANTERNA',
     TRAS: 'TRASEIRA', TRASEIRO: 'TRASEIRA', TRASEIRA: 'TRASEIRA',
     DIANT: 'DIANTEIRA', DIANTEIRO: 'DIANTEIRA', DIANTEIRA: 'DIANTEIRA',
+    RETR: 'RETROVISOR', RETROVISOR: 'RETROVISOR',
+    CROM: 'CROMADO', CROMADO: 'CROMADO',
     LE: 'ESQUERDO', LD: 'DIREITO', ESQ: 'ESQUERDO', DIR: 'DIREITO',
     ESQUERDA: 'ESQUERDO', ESQUERDO: 'ESQUERDO', DIREITA: 'DIREITO', DIREITO: 'DIREITO',
   };
@@ -1286,7 +1295,12 @@ export class VinculacaoNfeService {
    */
   private extrairAnos(text: string): { min: number; max: number; tokens: Set<string> } | null {
     if (!text) return null;
-    const s = String(text).toUpperCase();
+    // Cola modelo 'S-10' -> 'S10' p/ o '10' não ser lido como ano. Preserva faixas
+    // dígito-dígito ('11-14').
+    const s = String(text)
+      .toUpperCase()
+      .replace(/([A-Z])-(\d)/g, '$1$2')
+      .replace(/(\d)-([A-Z])/g, '$1$2');
     const anos: number[] = [];
     const tokens = new Set<string>();
 
@@ -1396,6 +1410,55 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Modelos de veículo (token único, MAIÚSCULO, sem acento). Lista extensível —
+   * inclua novos modelos aqui. 'S-10' já é normalizado p/ 'S10' antes de chegar aqui.
+   */
+  private static readonly MODELOS = new Set<string>([
+    // VW
+    'GOL', 'VOYAGE', 'SAVEIRO', 'PARATI', 'SANTANA', 'FOX', 'CROSSFOX', 'SPACEFOX',
+    'POLO', 'VIRTUS', 'NIVUS', 'TCROSS', 'UP', 'FUSCA', 'KOMBI', 'JETTA', 'BORA',
+    'GOLF', 'PASSAT', 'TIGUAN', 'AMAROK',
+    // Fiat
+    'UNO', 'MILLE', 'PALIO', 'SIENA', 'STRADA', 'WEEKEND', 'IDEA', 'PUNTO', 'LINEA',
+    'BRAVO', 'TIPO', 'ARGO', 'CRONOS', 'MOBI', 'TORO', 'FIORINO', 'DOBLO', 'PULSE',
+    'FASTBACK',
+    // GM / Chevrolet
+    'ONIX', 'PRISMA', 'CELTA', 'CORSA', 'CLASSIC', 'COBALT', 'AGILE', 'MONTANA',
+    'S10', 'BLAZER', 'SPIN', 'TRACKER', 'CRUZE', 'ASTRA', 'VECTRA', 'ZAFIRA',
+    'MERIVA', 'MONZA', 'KADETT', 'OMEGA', 'CAMARO', 'EQUINOX',
+    // Ford
+    'KA', 'FIESTA', 'FOCUS', 'FUSION', 'ECOSPORT', 'ESCORT', 'RANGER', 'EDGE',
+    'TERRITORY', 'MAVERICK', 'COURIER', 'BELINA',
+    // Toyota
+    'COROLLA', 'ETIOS', 'YARIS', 'HILUX', 'SW4', 'RAV4', 'CAMRY',
+    // Honda
+    'CIVIC', 'FIT', 'CITY', 'HRV', 'WRV', 'ACCORD', 'CRV',
+    // Renault
+    'SANDERO', 'LOGAN', 'DUSTER', 'KWID', 'CAPTUR', 'OROCH', 'STEPWAY', 'CLIO',
+    'MEGANE', 'SCENIC', 'KANGOO', 'SYMBOL', 'FLUENCE',
+    // Nissan
+    'MARCH', 'VERSA', 'KICKS', 'SENTRA', 'FRONTIER', 'LIVINA', 'TIIDA',
+    // Hyundai
+    'HB20', 'HB20S', 'CRETA', 'TUCSON', 'IX35', 'AZERA', 'SANTAFE', 'I30', 'ELANTRA',
+    // Kia
+    'CERATO', 'SPORTAGE', 'SORENTO', 'PICANTO', 'BONGO', 'SOUL',
+    // Mitsubishi
+    'L200', 'PAJERO', 'OUTLANDER', 'ASX', 'LANCER', 'TRITON', 'ECLIPSE',
+    // Jeep / outros
+    'RENEGADE', 'COMPASS', 'COMMANDER', 'CHEROKEE',
+  ]);
+
+  /** Extrai os modelos de veículo reconhecidos numa descrição. */
+  private extrairModelos(text: string): Set<string> {
+    const out = new Set<string>();
+    if (!text) return out;
+    for (const tk of this.normalizarTexto(text).split(' ')) {
+      if (VinculacaoNfeService.MODELOS.has(tk)) out.add(tk);
+    }
+    return out;
+  }
+
+  /**
    * Fallback: maior sobreposição de tokens entre xProd e descrição da cotação.
    * O valor unitário da NF (vUnCom) é usado como reforço: quando bate com o preço
    * do item (cotação pg ou pedido), soma um bônus ao score e relaxa o mínimo de
@@ -1417,6 +1480,7 @@ export class VinculacaoNfeService {
     const coresXml = this.extrairCores(item.xProd);
     const presencaXml = this.extrairPresenca(item.xProd);
     const ladoXml = this.extrairLado(item.xProd);
+    const modelosXml = this.extrairModelos(item.xProd);
 
     let best: ItemCotacao | null = null;
     let bestInter: string[] = [];
@@ -1449,6 +1513,14 @@ export class VinculacaoNfeService {
       if (ladoXml.size && ladoCot.size) {
         const mesmoLado = [...ladoXml].some((l) => ladoCot.has(l));
         if (!mesmoLado) continue;
+      }
+
+      // Modelo de veículo divergente => produtos diferentes (ex.: L200 x YARIS).
+      // Só trava quando os DOIS lados têm modelo reconhecido e nenhum coincide.
+      const modelosCot = this.extrairModelos(haystack);
+      if (modelosXml.size && modelosCot.size) {
+        const mesmoModelo = [...modelosXml].some((m) => modelosCot.has(m));
+        if (!mesmoModelo) continue;
       }
 
       // Faixa de anos: faixas que se sobrepõem são compatíveis (ex.: NF 2012/2014
