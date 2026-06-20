@@ -1343,19 +1343,24 @@ export class VinculacaoNfeService {
   }
 
   /** Léxico de cores (variações de gênero/número -> cor canônica). */
+  // Inclui abreviações comuns do fornecedor/cadastro (ex.: AMAR=amarelo, VERM=vermelho,
+  // PTO/PRET=preto, BCO/BRAN=branco). Assim cores abreviadas também são reconhecidas e
+  // continuam bloqueando combinações divergentes (amarelo x rosa).
   private static readonly CORES: Record<string, string> = {
-    PRETA: 'PRETO', PRETO: 'PRETO',
-    BRANCA: 'BRANCO', BRANCO: 'BRANCO',
-    VERMELHA: 'VERMELHO', VERMELHO: 'VERMELHO',
+    PRETA: 'PRETO', PRETO: 'PRETO', PRET: 'PRETO', PTO: 'PRETO', NEGRA: 'PRETO', NEGRO: 'PRETO',
+    BRANCA: 'BRANCO', BRANCO: 'BRANCO', BRAN: 'BRANCO', BCO: 'BRANCO',
+    VERMELHA: 'VERMELHO', VERMELHO: 'VERMELHO', VERM: 'VERMELHO',
     AZUL: 'AZUL', AZULADO: 'AZUL',
-    VERDE: 'VERDE',
-    AMARELA: 'AMARELO', AMARELO: 'AMARELO',
-    CINZA: 'CINZA', GRAFITE: 'CINZA',
-    PRATA: 'PRATA', PRATEADO: 'PRATA',
-    DOURADA: 'DOURADO', DOURADO: 'DOURADO',
+    VERDE: 'VERDE', VERD: 'VERDE',
+    AMARELA: 'AMARELO', AMARELO: 'AMARELO', AMAR: 'AMARELO',
+    CINZA: 'CINZA', CINZ: 'CINZA', GRAFITE: 'CINZA',
+    PRATA: 'PRATA', PRATEADO: 'PRATA', PRAT: 'PRATA',
+    DOURADA: 'DOURADO', DOURADO: 'DOURADO', DOUR: 'DOURADO',
     FUME: 'FUME', FUMACE: 'FUME',
     CRISTAL: 'CRISTAL',
-    ROSA: 'ROSA', LARANJA: 'LARANJA', MARROM: 'MARROM',
+    ROSA: 'ROSA',
+    LARANJA: 'LARANJA', LARAN: 'LARANJA', LRJ: 'LARANJA',
+    MARROM: 'MARROM', MARR: 'MARROM',
     BEGE: 'BEGE', VINHO: 'VINHO', CHAMPANHE: 'CHAMPANHE',
   };
 
