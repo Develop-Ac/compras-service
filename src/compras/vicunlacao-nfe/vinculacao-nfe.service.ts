@@ -1300,6 +1300,34 @@ export class VinculacaoNfeService {
     return a.min <= b.max && b.min <= a.max;
   }
 
+  /** Léxico de cores (variações de gênero/número -> cor canônica). */
+  private static readonly CORES: Record<string, string> = {
+    PRETA: 'PRETO', PRETO: 'PRETO',
+    BRANCA: 'BRANCO', BRANCO: 'BRANCO',
+    VERMELHA: 'VERMELHO', VERMELHO: 'VERMELHO',
+    AZUL: 'AZUL', AZULADO: 'AZUL',
+    VERDE: 'VERDE',
+    AMARELA: 'AMARELO', AMARELO: 'AMARELO',
+    CINZA: 'CINZA', GRAFITE: 'CINZA',
+    PRATA: 'PRATA', PRATEADO: 'PRATA',
+    DOURADA: 'DOURADO', DOURADO: 'DOURADO',
+    FUME: 'FUME', FUMACE: 'FUME',
+    CRISTAL: 'CRISTAL',
+    ROSA: 'ROSA', LARANJA: 'LARANJA', MARROM: 'MARROM',
+    BEGE: 'BEGE', VINHO: 'VINHO', CHAMPANHE: 'CHAMPANHE',
+  };
+
+  /** Extrai as cores canônicas presentes numa descrição (ex.: 'BORDA PRETA' -> {PRETO}). */
+  private extrairCores(text: string): Set<string> {
+    const out = new Set<string>();
+    if (!text) return out;
+    for (const tk of this.normalizarTexto(text).split(' ')) {
+      const c = VinculacaoNfeService.CORES[tk];
+      if (c) out.add(c);
+    }
+    return out;
+  }
+
   /**
    * Fallback: maior sobreposição de tokens entre xProd e descrição da cotação.
    * O valor unitário da NF (vUnCom) é usado como reforço: quando bate com o preço
@@ -1319,6 +1347,7 @@ export class VinculacaoNfeService {
 
     const vXml = item.vUnCom == null ? null : Number(item.vUnCom);
     const anosXml = this.extrairAnos(item.xProd);
+    const coresXml = this.extrairCores(item.xProd);
 
     let best: ItemCotacao | null = null;
     let bestInter: string[] = [];
@@ -1333,6 +1362,14 @@ export class VinculacaoNfeService {
         .join(' ');
       let toksCot = this.tokensSemanticos(haystack);
       if (!toksCot.size) continue;
+
+      // Cor divergente => produtos diferentes (ex.: BORDA PRETA x BORDA VERMELHA).
+      // Se os dois lados têm cor e não compartilham nenhuma, NÃO casa.
+      const coresCot = this.extrairCores(haystack);
+      if (coresXml.size && coresCot.size) {
+        const compartilhaCor = [...coresXml].some((c) => coresCot.has(c));
+        if (!compartilhaCor) continue;
+      }
 
       // Faixa de anos: faixas que se sobrepõem são compatíveis (ex.: NF 2012/2014
       // x pedido 11/14 = 2011..2014). Quando sobrepõem, removemos os tokens de ano
