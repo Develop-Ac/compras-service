@@ -1503,7 +1503,7 @@ export class VinculacaoNfeService {
     itens: ItemCotacao[],
     usados: Set<number>,
     precoPorCodigo: Map<string, number> = new Map(),
-    threshold = 0.5,
+    threshold = 0.7,
     minIntersec = 3,
   ): { item: ItemCotacao; campo: string; valor: string | null } | null {
     const toksXml = this.tokensSemanticos(item.xProd);
