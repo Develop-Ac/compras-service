@@ -66,7 +66,11 @@ export interface ItemPedido {
   valor_unitario: number | null;
 }
 
-const COLUNAS_COTACAO = ['pro_codigo', 'referencia', 'ref_fabricante', 'ref_fornecedor'] as const;
+// O cProd/xProd da NF é casado APENAS contra referências externas — referencia,
+// ref_fabricante e ref_fornecedor (referência grupo). NUNCA contra o pro_codigo
+// (código interno), que jamais coincide com o código do fornecedor; casá-los
+// causava colisões (ex.: cProd 038883 = pro_codigo 38883 de outro produto).
+const COLUNAS_COTACAO = ['referencia', 'ref_fabricante', 'ref_fornecedor'] as const;
 type ColunaCotacao = (typeof COLUNAS_COTACAO)[number];
 
 @Injectable()
@@ -1184,8 +1188,11 @@ export class VinculacaoNfeService {
       if (!chave) continue;
       for (const col of COLUNAS_COTACAO) {
         const cands = indices[col].get(chave);
-        if (cands && cands.length) {
-          const alvo = cands[0];
+        if (!cands || !cands.length) continue;
+        for (const alvo of cands) {
+          // Mesmo casando por código, barra modelo/cor/lado/presença divergentes —
+          // protege contra colisão do cProd do fornecedor com o nosso pro_codigo.
+          if (this.conflitaAtributos(item.xProd, this.cotacaoDesc(alvo))) continue;
           const campo =
             col === 'ref_fornecedor' && alvo._origem === 'pg' ? 'ref_fornecedor_pg' : col;
           return { item: alvo, campo, valor: this.normRef((alvo as any)[col]) };
@@ -1459,6 +1466,33 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Conflito de atributo distintivo entre duas descrições: modelo de veículo, cor,
+   * lado ou presença (com/sem). Cada checagem só "trava" quando AMBOS os lados
+   * declaram o atributo e nenhum coincide. Usado tanto no match por código quanto
+   * no semântico — um produto de modelo/cor/lado diferente nunca deve casar, mesmo
+   * que o código do fornecedor colida com o nosso (ex.: cProd 038883 = código 38883).
+   */
+  private conflitaAtributos(xmlDesc: string, cotDesc: string): boolean {
+    const disjunto = (a: Set<string>, b: Set<string>) =>
+      a.size > 0 && b.size > 0 && ![...a].some((x) => b.has(x));
+
+    if (disjunto(this.extrairModelos(xmlDesc), this.extrairModelos(cotDesc))) return true;
+    if (disjunto(this.extrairCores(xmlDesc), this.extrairCores(cotDesc))) return true;
+    if (disjunto(this.extrairLado(xmlDesc), this.extrairLado(cotDesc))) return true;
+    if (this.presencaConflita(this.extrairPresenca(xmlDesc), this.extrairPresenca(cotDesc))) {
+      return true;
+    }
+    return false;
+  }
+
+  /** Junta os campos textuais de um item de cotação para análise de atributos. */
+  private cotacaoDesc(it: ItemCotacao): string {
+    return [it.pro_descricao, it.referencia, it.ref_fabricante, it.ref_fornecedor]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  /**
    * Fallback: maior sobreposição de tokens entre xProd e descrição da cotação.
    * O valor unitário da NF (vUnCom) é usado como reforço: quando bate com o preço
    * do item (cotação pg ou pedido), soma um bônus ao score e relaxa o mínimo de
@@ -1477,10 +1511,6 @@ export class VinculacaoNfeService {
 
     const vXml = item.vUnCom == null ? null : Number(item.vUnCom);
     const anosXml = this.extrairAnos(item.xProd);
-    const coresXml = this.extrairCores(item.xProd);
-    const presencaXml = this.extrairPresenca(item.xProd);
-    const ladoXml = this.extrairLado(item.xProd);
-    const modelosXml = this.extrairModelos(item.xProd);
 
     let best: ItemCotacao | null = null;
     let bestInter: string[] = [];
@@ -1496,32 +1526,8 @@ export class VinculacaoNfeService {
       let toksCot = this.tokensSemanticos(haystack);
       if (!toksCot.size) continue;
 
-      // Cor divergente => produtos diferentes (ex.: BORDA PRETA x BORDA VERMELHA).
-      // Se os dois lados têm cor e não compartilham nenhuma, NÃO casa.
-      const coresCot = this.extrairCores(haystack);
-      if (coresXml.size && coresCot.size) {
-        const compartilhaCor = [...coresXml].some((c) => coresCot.has(c));
-        if (!compartilhaCor) continue;
-      }
-
-      // Presença divergente => produtos diferentes (ex.: C/LED x S/LED). NÃO casa.
-      const presencaCot = this.extrairPresenca(haystack);
-      if (this.presencaConflita(presencaXml, presencaCot)) continue;
-
-      // Lado divergente => produtos diferentes (ex.: LE x LD). NÃO casa.
-      const ladoCot = this.extrairLado(haystack);
-      if (ladoXml.size && ladoCot.size) {
-        const mesmoLado = [...ladoXml].some((l) => ladoCot.has(l));
-        if (!mesmoLado) continue;
-      }
-
-      // Modelo de veículo divergente => produtos diferentes (ex.: L200 x YARIS).
-      // Só trava quando os DOIS lados têm modelo reconhecido e nenhum coincide.
-      const modelosCot = this.extrairModelos(haystack);
-      if (modelosXml.size && modelosCot.size) {
-        const mesmoModelo = [...modelosXml].some((m) => modelosCot.has(m));
-        if (!mesmoModelo) continue;
-      }
+      // Atributo distintivo divergente (modelo/cor/lado/presença) => não casa.
+      if (this.conflitaAtributos(item.xProd, haystack)) continue;
 
       // Faixa de anos: faixas que se sobrepõem são compatíveis (ex.: NF 2012/2014
       // x pedido 11/14 = 2011..2014). Quando sobrepõem, removemos os tokens de ano
