@@ -298,16 +298,25 @@ export class PedidoService {
       total_valor: number;
       total_valor_fmt: string;
       status: string;
+      produtos_cod: string;
+      produtos_desc: string;
     }> = [];
     for (const p of pedidos) {
       let totalQtd = 0;
       let totalValor = 0;
+      const codigos: string[] = [];
+      const descricoes: string[] = [];
       for (const it of p.itens) {
         const q = Number(it.quantidade ?? 0);
         const vu = it.valor_unitario != null ? Number(it.valor_unitario) : 0;
         totalQtd += q;
         totalValor += q * vu;
+        if (it.pro_codigo != null) codigos.push(String(it.pro_codigo));
+        if (it.pro_descricao) descricoes.push(String(it.pro_descricao));
       }
+      // Strings compactas (minúsculas) p/ o filtro avançado por item no cliente.
+      const produtos_cod = codigos.join(' ').toLowerCase();
+      const produtos_desc = descricoes.join(' | ').toLowerCase();
 
       // Consulta for_nome via OPENQUERY
       let for_nome: string | null = null;
@@ -338,6 +347,8 @@ export class PedidoService {
         total_qtd: totalQtd,
         total_valor: totalValor,
         total_valor_fmt: `\u00A0${fmtBR.format(totalValor)}`,
+        produtos_cod,
+        produtos_desc,
       });
     }
     return results;

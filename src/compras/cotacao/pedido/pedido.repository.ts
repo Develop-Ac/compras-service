@@ -21,7 +21,8 @@ export class PedidoRepository {
       orderBy: { created_at: 'desc' },
       include: {
         _count: { select: { itens: true } },
-        itens: { select: { quantidade: true, valor_unitario: true } },
+        // pro_codigo/pro_descricao usados para o filtro avançado por item (busca no cliente).
+        itens: { select: { quantidade: true, valor_unitario: true, pro_codigo: true, pro_descricao: true } },
       },
     });
   }
