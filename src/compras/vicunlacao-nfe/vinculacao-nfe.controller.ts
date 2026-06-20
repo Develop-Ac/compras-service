@@ -94,6 +94,19 @@ export class VinculacaoNfeController {
     return this.service.vincularItemConferencia(itemId, body);
   }
 
+  // POST /compras/vinculacao-nfe/item/:itemId/desvincular
+  // Rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('item/:itemId/desvincular')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Desfaz o vínculo de um item na conferência (volta para XML sem vínculo)',
+  })
+  @ApiParam({ name: 'itemId', description: 'com_pedido_nfe_vinculo_item.id (item tipo vinculado)' })
+  @ApiResponse({ status: 200, description: 'Item desvinculado e status do pedido recalculado.' })
+  async desvincularItemConferencia(@Param('itemId') itemId: string) {
+    return this.service.desvincularItemConferencia(itemId);
+  }
+
   // GET /compras/vinculacao-nfe/pedido/:pedidoId
   @Get('pedido/:pedidoId')
   @ApiOperation({

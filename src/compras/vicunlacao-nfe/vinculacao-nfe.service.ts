@@ -185,10 +185,8 @@ export class VinculacaoNfeService {
         this.encontrarMatch(item, indices) ??
         this.matchSemantico(item, itensCotacao, usados, precoPorCodigo);
       if (match) {
-        usados.add(match.item._idx);
         const codigo = match.item.pro_codigo;
         const ped = codigo == null ? undefined : pedidoPorCodigo.get(String(codigo));
-        if (codigo != null) proCodigosVinculados.add(String(codigo));
 
         // Saldo deste item: restante da NF (total − consumido) e do pedido.
         const cprodNorm = this.normRef(item.cProd);
@@ -205,6 +203,18 @@ export class VinculacaoNfeService {
         const limites = [qCom, saldoNf, ...(saldoPedido == null ? [] : [saldoPedido])];
         const alocada = Math.max(0, Math.min(...limites));
         const excede = qCom > saldoNf + 1e-6 || (saldoPedido != null && qCom > saldoPedido + 1e-6);
+
+        // Vinculação automática (tokens) só ocorre se houver saldo disponível.
+        // Sem saldo (NF ou pedido já totalmente consumidos), o item NÃO é vinculado
+        // automaticamente — vai para "XML sem vínculo", onde pode ser vinculado
+        // manualmente (com aviso de saldo) se o usuário decidir.
+        if (alocada <= 1e-6) {
+          xmlSemVinculo.push(item);
+          continue;
+        }
+
+        usados.add(match.item._idx);
+        if (codigo != null) proCodigosVinculados.add(String(codigo));
 
         // Reserva o alocado para os próximos itens desta mesma chamada.
         if (cprodNorm) consumidoNf.set(cprodNorm, jaConsumidoNf + alocada);
@@ -491,6 +501,10 @@ export class VinculacaoNfeService {
       chaves_nfe: Set<string>;
       contribs: Array<{ qtd: number; chave: string }>;
       excede_saldo: boolean;
+      // Código + descrição do produto no XML da NF (pode haver mais de um casado no mesmo pro_codigo)
+      xmlProds: Map<string, { cprod_xml: string | null; produto_xml: string | null }>;
+      // ids dos com_pedido_nfe_vinculo_item (tipo='vinculado') deste produto — p/ desvincular
+      itemIds: string[];
     }
     const faturadoPorCodigo = new Map<number, AggFaturado>();
     const chavesFaturadas = new Set<string>();
@@ -509,9 +523,9 @@ export class VinculacaoNfeService {
       if (it.tipo === 'vinculado') {
         if (it.pro_codigo == null) continue;
         const cod = Number(it.pro_codigo);
-        const atual =
+        const atual: AggFaturado =
           faturadoPorCodigo.get(cod) ??
-          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [], excede_saldo: false };
+          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [], excede_saldo: false, xmlProds: new Map(), itemIds: [] };
         // Base do faturado = quantidade_alocada (quanto deste item da NF foi para
         // ESTE pedido), evitando dobrar quando a NF é repartida entre pedidos.
         // Fallback p/ quantidade_xml em vínculos antigos sem alocação gravada.
@@ -520,6 +534,15 @@ export class VinculacaoNfeService {
         // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
         atual.valor_faturado = num(it.vuncom_xml);
         if (it.excede_saldo) atual.excede_saldo = true;
+        if (it.id) atual.itemIds.push(it.id);
+        // Guarda o código/descrição do produto no XML (dedup por cprod_xml).
+        const xmlKey = String(it.cprod_xml ?? it.produto_xml ?? '');
+        if (xmlKey && !atual.xmlProds.has(xmlKey)) {
+          atual.xmlProds.set(xmlKey, {
+            cprod_xml: it.cprod_xml ?? null,
+            produto_xml: it.produto_xml ?? null,
+          });
+        }
         if (chave) {
           atual.chaves_nfe.add(chave);
           atual.contribs.push({ qtd: q, chave });
@@ -543,6 +566,38 @@ export class VinculacaoNfeService {
       concChaves.map((c) => [c.chave_nfe, c.status_erp === 'LANCADA']),
     );
     const valorFaturadoTotal = concChaves.reduce((acc, c) => acc + num(c.valor_total), 0);
+
+    // Outros pedidos que compartilham as mesmas NF-e/produtos (p/ os itens que
+    // excedem saldo): mapa pro_codigo -> [{ pedido_id, pedido_cotacao, chave_nfe }].
+    const proCodigosPedido = itensPedido
+      .map((p) => Number(p.pro_codigo))
+      .filter((c) => Number.isFinite(c));
+    const outrosRows = await this.repo.findOutrosPedidosVinculados(
+      [...chavesFaturadas],
+      proCodigosPedido,
+      pedidoId,
+    );
+    const outrosPorCodigo = new Map<
+      number,
+      Array<{ pedido_id: string; pedido_cotacao: number; chave_nfe: string }>
+    >();
+    for (const r of outrosRows) {
+      if (r.pro_codigo == null || !r.vinculo) continue;
+      const cod = Number(r.pro_codigo);
+      const lista = outrosPorCodigo.get(cod) ?? [];
+      // dedup por pedido_id + chave_nfe
+      const ja = lista.some(
+        (x) => x.pedido_id === r.vinculo!.pedido_id && x.chave_nfe === r.vinculo!.chave_nfe,
+      );
+      if (!ja) {
+        lista.push({
+          pedido_id: r.vinculo.pedido_id,
+          pedido_cotacao: r.vinculo.pedido_cotacao,
+          chave_nfe: r.vinculo.chave_nfe,
+        });
+      }
+      outrosPorCodigo.set(cod, lista);
+    }
 
     let itensCompletos = 0;
     let itensParciais = 0;
@@ -620,6 +675,9 @@ export class VinculacaoNfeService {
         situacao,
         status_produto: statusProduto,
         excede_saldo: agg?.excede_saldo ?? false,
+        produtos_xml: agg ? [...agg.xmlProds.values()] : [],
+        outros_pedidos: outrosPorCodigo.get(cod) ?? [],
+        vinculo_item_ids: agg?.itemIds ?? [],
         chaves_nfe: chavesNfe,
       };
     });
@@ -664,6 +722,22 @@ export class VinculacaoNfeService {
     await this.repo.vincularItem(itemId, dados);
     const status = await this.recalcularStatusPedido(item.vinculo.pedido_id);
     return { id: itemId, vinculado: true, status };
+  }
+
+  /**
+   * Desfaz o vínculo de um item na conferência: volta o item para
+   * tipo='xml_sem_vinculo' (mantém o lado da NF, limpa o lado do pedido) e
+   * recalcula o status. O item da NF reaparece em "XML sem vínculo" e o produto
+   * do pedido, se ficar sem cobertura, volta para "Pedido sem vínculo".
+   */
+  async desvincularItemConferencia(itemId: string) {
+    const item = await this.repo.findVinculoItemComPedido(itemId);
+    if (!item) {
+      throw new NotFoundException(`Item de vínculo ${itemId} não encontrado.`);
+    }
+    await this.repo.desvincularItem(itemId);
+    const status = await this.recalcularStatusPedido(item.vinculo.pedido_id);
+    return { id: itemId, desvinculado: true, status };
   }
 
   // ----------------------- Status automático do pedido -----------------------

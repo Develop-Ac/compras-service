@@ -630,6 +630,36 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  /**
+   * Outros pedidos (≠ exceptPedidoId) que têm vínculo CONFIRMADO consumindo os
+   * mesmos itens (chave_nfe + pro_codigo). Usado na conferência para mostrar, num
+   * item que excede saldo, em quais outros pedidos a NF foi vinculada.
+   */
+  async findOutrosPedidosVinculados(
+    chaves: string[],
+    proCodigos: number[],
+    exceptPedidoId: string,
+  ) {
+    if (!chaves.length || !proCodigos.length) return [];
+    return this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        pro_codigo: { in: proCodigos },
+        vinculo: {
+          chave_nfe: { in: chaves },
+          confirmado: true,
+          pedido_id: { not: exceptPedidoId },
+        },
+      },
+      select: {
+        pro_codigo: true,
+        quantidade_alocada: true,
+        quantidade_xml: true,
+        vinculo: { select: { pedido_id: true, pedido_cotacao: true, chave_nfe: true } },
+      },
+    });
+  }
+
   /** Lê um item de vínculo + o pedido a que pertence (via cabeçalho). */
   async findVinculoItemComPedido(itemId: string) {
     return this.prisma.com_pedido_nfe_vinculo_item.findUnique({
@@ -659,6 +689,24 @@ export class VinculacaoNfeRepository {
         match_campo: 'Manual (conferência)',
         match_valor: 'Vínculo manual',
         origem: 'manual',
+      },
+    });
+  }
+
+  /** Desfaz o vínculo de um item: volta para 'xml_sem_vinculo', limpando o lado do pedido. */
+  async desvincularItem(itemId: string) {
+    return this.prisma.com_pedido_nfe_vinculo_item.update({
+      where: { id: itemId },
+      data: {
+        tipo: 'xml_sem_vinculo',
+        pro_codigo: null,
+        pro_descricao: null,
+        quantidade_pedido: null,
+        valor_pedido: null,
+        quantidade_alocada: null,
+        excede_saldo: false,
+        match_campo: 'Desvinculado (conferência)',
+        match_valor: null,
       },
     });
   }
