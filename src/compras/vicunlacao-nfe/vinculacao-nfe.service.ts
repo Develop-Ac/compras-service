@@ -174,8 +174,16 @@ export class VinculacaoNfeService {
 
     const indices = this.indexarCotacao(itensCotacao);
 
+    // Preço por pro_codigo (do pedido) para reforçar o match semântico pelo Vlr Un.
+    const precoPorCodigo = new Map<string, number>();
+    for (const [codigo, p] of pedidoPorCodigo) {
+      if (p.valor_unitario != null) precoPorCodigo.set(codigo, Number(p.valor_unitario));
+    }
+
     for (const item of itensXml) {
-      const match = this.encontrarMatch(item, indices) ?? this.matchSemantico(item, itensCotacao, usados);
+      const match =
+        this.encontrarMatch(item, indices) ??
+        this.matchSemantico(item, itensCotacao, usados, precoPorCodigo);
       if (match) {
         usados.add(match.item._idx);
         const codigo = match.item.pro_codigo;
@@ -1138,7 +1146,10 @@ export class VinculacaoNfeService {
     if (!s) return '';
     let t = String(s).normalize('NFKD').replace(/[̀-ͯ]/g, '').toUpperCase();
     for (const k of Object.keys(VinculacaoNfeService.ABREV).sort((a, b) => b.length - a.length)) {
-      t = t.split(k).join(VinculacaoNfeService.ABREV[k]);
+      // Pad com espaços: a abreviação costuma consumir o separador (ex.: 'TRAS.'),
+      // então sem o espaço a expansão gruda na palavra seguinte
+      // ('LANT.TRAS.SANDERO' -> 'LANT.TRASEIROSANDERO', perdendo o token SANDERO).
+      t = t.split(k).join(` ${VinculacaoNfeService.ABREV[k]} `);
     }
     t = t.replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     return t;
@@ -1152,44 +1163,157 @@ export class VinculacaoNfeService {
     );
   }
 
-  /** Fallback: maior sobreposição de tokens entre xProd e descrição da cotação. */
+  /** Bônus de score quando o valor unitário da NF bate com o do pedido/cotação. */
+  private static readonly VALOR_BONUS = 0.25;
+
+  /** Bônus de score quando as faixas de ano da NF e do pedido se sobrepõem. */
+  private static readonly ANO_BONUS = 0.15;
+
+  /** Valor unitário bate (mesmo preço negociado): tolerância de 1% ou 2 centavos. */
+  private valorUnitarioBate(a: number | null, b: number | null): boolean {
+    if (a == null || b == null) return false;
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) return false;
+    return Math.abs(a - b) <= Math.max(0.02, 0.01 * Math.max(a, b));
+  }
+
+  /** Expande um ano (2 ou 4 dígitos) para 4 dígitos. Ex.: '11' -> 2011, '98' -> 1998. */
+  private expandAno(n: string): number | null {
+    const d = String(n).replace(/\D/g, '');
+    if (d.length === 4) {
+      const y = Number(d);
+      return y >= 1900 && y <= 2099 ? y : null;
+    }
+    if (d.length === 2) {
+      const y = Number(d);
+      return y <= 50 ? 2000 + y : 1900 + y;
+    }
+    return null;
+  }
+
+  /**
+   * Extrai a faixa de anos de uma descrição (ex.: '11/14' -> 2011..2014,
+   * '2012/2014' -> 2012..2014, ou um ano 4 dígitos solto). Retorna a faixa e os
+   * tokens crus de ano encontrados (para poder removê-los da comparação textual).
+   */
+  private extrairAnos(text: string): { min: number; max: number; tokens: Set<string> } | null {
+    if (!text) return null;
+    const s = String(text).toUpperCase();
+    const anos: number[] = [];
+    const tokens = new Set<string>();
+
+    // Faixas NN/NN, NNNN/NNNN, NN-NN, etc.
+    for (const m of s.matchAll(/(\d{2,4})\s*[\/\-]\s*(\d{2,4})/g)) {
+      const a = this.expandAno(m[1]);
+      const b = this.expandAno(m[2]);
+      if (a != null) { anos.push(a); tokens.add(m[1]); }
+      if (b != null) { anos.push(b); tokens.add(m[2]); }
+    }
+    // Anos de 4 dígitos soltos (19xx / 20xx).
+    for (const m of s.matchAll(/\b(?:19|20)\d{2}\b/g)) {
+      anos.push(Number(m[0]));
+      tokens.add(m[0]);
+    }
+    if (!anos.length) return null;
+    return { min: Math.min(...anos), max: Math.max(...anos), tokens };
+  }
+
+  /** Duas faixas de anos se sobrepõem? Ex.: [2011,2014] e [2012,2014] -> true. */
+  private anosSobrepoe(
+    a: { min: number; max: number } | null,
+    b: { min: number; max: number } | null,
+  ): boolean {
+    if (!a || !b) return false;
+    return a.min <= b.max && b.min <= a.max;
+  }
+
+  /**
+   * Fallback: maior sobreposição de tokens entre xProd e descrição da cotação.
+   * O valor unitário da NF (vUnCom) é usado como reforço: quando bate com o preço
+   * do item (cotação pg ou pedido), soma um bônus ao score e relaxa o mínimo de
+   * tokens p/ 2 — é o mesmo preço negociado, evidência forte de ser o mesmo item.
+   */
   private matchSemantico(
     item: ItemXml,
     itens: ItemCotacao[],
     usados: Set<number>,
+    precoPorCodigo: Map<string, number> = new Map(),
     threshold = 0.5,
     minIntersec = 3,
   ): { item: ItemCotacao; campo: string; valor: string | null } | null {
     const toksXml = this.tokensSemanticos(item.xProd);
-    if (toksXml.size < minIntersec) return null;
+    if (toksXml.size < 2) return null;
+
+    const vXml = item.vUnCom == null ? null : Number(item.vUnCom);
+    const anosXml = this.extrairAnos(item.xProd);
 
     let best: ItemCotacao | null = null;
     let bestInter: string[] = [];
     let bestScore = 0;
+    let bestVlrBate = false;
+    let bestAnoBate = false;
 
     for (const it of itens) {
       if (usados.has(it._idx)) continue;
       const haystack = [it.pro_descricao, it.referencia, it.ref_fabricante, it.ref_fornecedor]
         .filter(Boolean)
         .join(' ');
-      const toksCot = this.tokensSemanticos(haystack);
+      let toksCot = this.tokensSemanticos(haystack);
       if (!toksCot.size) continue;
 
-      const inter = [...toksXml].filter((tk) => toksCot.has(tk));
-      if (inter.length < minIntersec) continue;
-      const cont = inter.length / Math.min(toksXml.size, toksCot.size);
-      if (cont > bestScore) {
-        bestScore = cont;
+      // Faixa de anos: faixas que se sobrepõem são compatíveis (ex.: NF 2012/2014
+      // x pedido 11/14 = 2011..2014). Quando sobrepõem, removemos os tokens de ano
+      // da comparação (param de diluir) e damos um bônus. Quando conflitam, mantemos
+      // os tokens p/ diferenciar produtos que só mudam de ano.
+      const anosCot = this.extrairAnos(haystack);
+      const anoBate = this.anosSobrepoe(anosXml, anosCot);
+
+      let toksXmlCmp = toksXml;
+      if (anoBate) {
+        const anoTokens = new Set([
+          ...(anosXml?.tokens ?? []),
+          ...(anosCot?.tokens ?? []),
+        ]);
+        toksXmlCmp = new Set([...toksXml].filter((tk) => !anoTokens.has(tk)));
+        toksCot = new Set([...toksCot].filter((tk) => !anoTokens.has(tk)));
+      }
+      if (!toksXmlCmp.size || !toksCot.size) continue;
+
+      const inter = [...toksXmlCmp].filter((tk) => toksCot.has(tk));
+
+      // Preço do candidato: cotação pg traz valor_unitario; senão usa o do pedido.
+      const precoCand =
+        it.valor_unitario ?? precoPorCodigo.get(String(it.pro_codigo)) ?? null;
+      const vlrBate = this.valorUnitarioBate(vXml, precoCand);
+
+      // Com valor ou ano batendo, basta sobreposição de 2 tokens; senão, o mínimo padrão.
+      const minReq = vlrBate || anoBate ? 2 : minIntersec;
+      if (inter.length < minReq) continue;
+
+      const base = inter.length / Math.min(toksXmlCmp.size, toksCot.size);
+      const score = Math.min(
+        1,
+        base +
+          (vlrBate ? VinculacaoNfeService.VALOR_BONUS : 0) +
+          (anoBate ? VinculacaoNfeService.ANO_BONUS : 0),
+      );
+      if (score > bestScore) {
+        bestScore = score;
         best = it;
         bestInter = inter;
+        bestVlrBate = vlrBate;
+        bestAnoBate = anoBate;
       }
     }
 
     if (best && bestScore >= threshold) {
+      const extras = [
+        bestVlrBate ? 'Vlr igual' : null,
+        bestAnoBate ? 'Ano compat.' : null,
+      ].filter(Boolean);
       return {
         item: best,
         campo: 'Analise semantica',
-        valor: `${Math.round(bestScore * 100)}% | ${bestInter.sort().join(' ')}`,
+        valor: `${Math.round(bestScore * 100)}% | ${bestInter.sort().join(' ')}${extras.length ? ' | ' + extras.join(' ') : ''}`,
       };
     }
     return null;
