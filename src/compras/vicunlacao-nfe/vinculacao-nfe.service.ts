@@ -1229,11 +1229,26 @@ export class VinculacaoNfeService {
     return t;
   }
 
+  /**
+   * Sinônimos/abreviações de catálogo, canonizados por TOKEN (não por substring,
+   * p/ não corromper palavras). Ex.: LANT/LAN -> LANTERNA, TRAS -> TRASEIRA,
+   * LE/LD -> ESQUERDO/DIREITO. Faz o nome do produto ("Lanterna Traseira") e o
+   * lado casarem mesmo escritos de formas diferentes nos dois lados.
+   */
+  private static readonly SINONIMOS: Record<string, string> = {
+    LANT: 'LANTERNA', LAN: 'LANTERNA', LANTERNA: 'LANTERNA',
+    TRAS: 'TRASEIRA', TRASEIRO: 'TRASEIRA', TRASEIRA: 'TRASEIRA',
+    DIANT: 'DIANTEIRA', DIANTEIRO: 'DIANTEIRA', DIANTEIRA: 'DIANTEIRA',
+    LE: 'ESQUERDO', LD: 'DIREITO', ESQ: 'ESQUERDO', DIR: 'DIREITO',
+    ESQUERDA: 'ESQUERDO', ESQUERDO: 'ESQUERDO', DIREITA: 'DIREITO', DIREITO: 'DIREITO',
+  };
+
   private tokensSemanticos(s: any): Set<string> {
     return new Set(
       this.normalizarTexto(s)
         .split(' ')
-        .filter((tk) => tk.length >= 2 && !VinculacaoNfeService.STOP.has(tk)),
+        .filter((tk) => tk.length >= 2 && !VinculacaoNfeService.STOP.has(tk))
+        .map((tk) => VinculacaoNfeService.SINONIMOS[tk] ?? tk),
     );
   }
 
@@ -1287,6 +1302,12 @@ export class VinculacaoNfeService {
       anos.push(Number(m[0]));
       tokens.add(m[0]);
     }
+    // Anos de 2 dígitos soltos (ex.: 'UNO 04' -> 2004). Só afeta o bônus/strip de
+    // ano (nunca bloqueia o match), então o risco de confundir com medida é baixo.
+    for (const m of s.matchAll(/\b\d{2}\b/g)) {
+      const y = this.expandAno(m[0]);
+      if (y != null) { anos.push(y); tokens.add(m[0]); }
+    }
     if (!anos.length) return null;
     return { min: Math.min(...anos), max: Math.max(...anos), tokens };
   }
@@ -1329,6 +1350,52 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Extrai recursos marcados como COM (presente) ou SEM (ausente). normalizarTexto
+   * já expande 'C/' -> 'COM' e 'S/' -> 'SEM'. Ex.: 'C/LED' -> com={LED};
+   * 'S/LED' -> sem={LED}. Usado para barrar 'com LED' x 'sem LED'.
+   */
+  private extrairPresenca(text: string): { com: Set<string>; sem: Set<string> } {
+    const com = new Set<string>();
+    const sem = new Set<string>();
+    if (!text) return { com, sem };
+    const toks = this.normalizarTexto(text).split(' ');
+    for (let i = 0; i < toks.length - 1; i++) {
+      const prox = toks[i + 1];
+      if (!prox) continue;
+      if (toks[i] === 'COM') com.add(prox);
+      else if (toks[i] === 'SEM') sem.add(prox);
+    }
+    return { com, sem };
+  }
+
+  /** Conflito de presença: um lado diz COM X e o outro SEM X (ex.: com LED x sem LED). */
+  private presencaConflita(
+    a: { com: Set<string>; sem: Set<string> },
+    b: { com: Set<string>; sem: Set<string> },
+  ): boolean {
+    for (const f of a.com) if (b.sem.has(f)) return true;
+    for (const f of a.sem) if (b.com.has(f)) return true;
+    return false;
+  }
+
+  /** Lado (esquerdo/direito): LE/ESQ -> ESQUERDO, LD/DIR -> DIREITO. */
+  private static readonly LADOS: Record<string, string> = {
+    LE: 'ESQUERDO', ESQ: 'ESQUERDO', ESQUERDA: 'ESQUERDO', ESQUERDO: 'ESQUERDO',
+    LD: 'DIREITO', DIR: 'DIREITO', DIREITA: 'DIREITO', DIREITO: 'DIREITO',
+  };
+
+  /** Extrai os lados (ESQUERDO/DIREITO) citados numa descrição. */
+  private extrairLado(text: string): Set<string> {
+    const out = new Set<string>();
+    if (!text) return out;
+    for (const tk of this.normalizarTexto(text).split(' ')) {
+      const l = VinculacaoNfeService.LADOS[tk];
+      if (l) out.add(l);
+    }
+    return out;
+  }
+
+  /**
    * Fallback: maior sobreposição de tokens entre xProd e descrição da cotação.
    * O valor unitário da NF (vUnCom) é usado como reforço: quando bate com o preço
    * do item (cotação pg ou pedido), soma um bônus ao score e relaxa o mínimo de
@@ -1348,6 +1415,8 @@ export class VinculacaoNfeService {
     const vXml = item.vUnCom == null ? null : Number(item.vUnCom);
     const anosXml = this.extrairAnos(item.xProd);
     const coresXml = this.extrairCores(item.xProd);
+    const presencaXml = this.extrairPresenca(item.xProd);
+    const ladoXml = this.extrairLado(item.xProd);
 
     let best: ItemCotacao | null = null;
     let bestInter: string[] = [];
@@ -1369,6 +1438,17 @@ export class VinculacaoNfeService {
       if (coresXml.size && coresCot.size) {
         const compartilhaCor = [...coresXml].some((c) => coresCot.has(c));
         if (!compartilhaCor) continue;
+      }
+
+      // Presença divergente => produtos diferentes (ex.: C/LED x S/LED). NÃO casa.
+      const presencaCot = this.extrairPresenca(haystack);
+      if (this.presencaConflita(presencaXml, presencaCot)) continue;
+
+      // Lado divergente => produtos diferentes (ex.: LE x LD). NÃO casa.
+      const ladoCot = this.extrairLado(haystack);
+      if (ladoXml.size && ladoCot.size) {
+        const mesmoLado = [...ladoXml].some((l) => ladoCot.has(l));
+        if (!mesmoLado) continue;
       }
 
       // Faixa de anos: faixas que se sobrepõem são compatíveis (ex.: NF 2012/2014
