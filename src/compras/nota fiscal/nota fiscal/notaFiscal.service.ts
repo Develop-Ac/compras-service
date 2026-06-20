@@ -100,6 +100,20 @@ export class NotaFiscalService {
 
     let resultado = [...data, ...lancadasMapeadas];
 
+    // Esconde as NF-e JÁ vinculadas a este pedido (aparecem na seção "Notas já
+    // vinculadas", não devem reaparecer na lista de disponíveis).
+    const jaVinculadas = await this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { pedido_id: pedidoId },
+      select: { chave_nfe: true },
+      distinct: ['chave_nfe'],
+    });
+    if (jaVinculadas.length) {
+      const chavesVinculadas = new Set(jaVinculadas.map((v) => v.chave_nfe));
+      resultado = resultado.filter(
+        (r) => !chavesVinculadas.has(String(r?.CHAVE_NFE ?? '')),
+      );
+    }
+
     // Filtro por GRUPO de fornecedores (matriz/filiais): por padrão mostra só as
     // NF-e emitidas por algum CNPJ do grupo do fornecedor do pedido. 'mostrarTodas'
     // libera o restante. Mesmo critério usado no auto-vínculo (cnpjsDoGrupo).

@@ -686,6 +686,24 @@ export class VinculacaoNfeService {
       };
     });
 
+    // "XML sem vínculo": só mantém itens da NF que AINDA têm saldo GLOBAL para
+    // vincular (qtd total do item da NF − consumido em vínculos confirmados de
+    // QUALQUER pedido). A mesma NF pode ir para vários pedidos, então o saldo é
+    // global, não só deste pedido.
+    const chavesSemPedido = [...new Set(itensNfSemPedido.map((i) => i.chave_nfe).filter(Boolean))];
+    const totalPorChave = new Map<string, Map<string, number>>();
+    const consumidoGlobalPorChave = new Map<string, Map<string, number>>();
+    for (const ch of chavesSemPedido) {
+      totalPorChave.set(ch, await this.repo.totalPorNfItem(ch));
+      consumidoGlobalPorChave.set(ch, await this.repo.consumidoPorNfItem(ch));
+    }
+    const itensNfComSaldo = itensNfSemPedido.filter((it) => {
+      const norm = this.normRef(it.cprod_xml);
+      const total = totalPorChave.get(it.chave_nfe)?.get(norm) ?? num(it.quantidade_xml);
+      const consumido = consumidoGlobalPorChave.get(it.chave_nfe)?.get(norm) ?? 0;
+      return total - consumido > 0.001;
+    });
+
     return {
       pedido_id: pedido.id,
       status: pedido.status ?? '',
@@ -702,7 +720,7 @@ export class VinculacaoNfeService {
         valor_faturado: valorFaturadoTotal,
       },
       itens,
-      itens_nf_sem_pedido: itensNfSemPedido,
+      itens_nf_sem_pedido: itensNfComSaldo,
     };
   }
 
