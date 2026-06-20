@@ -234,6 +234,156 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  // --------------------------- Saldo por item da NF --------------------------
+
+  /** Normaliza o cProd para casar com o que é gravado em cprod_xml (mesma regra do service). */
+  private normCprod(s: any): string {
+    if (s == null) return '';
+    return String(s).replace(/\s+/g, '').toUpperCase().replace(/^0+(?=.)/, '');
+  }
+
+  /**
+   * Semeia/atualiza o snapshot do total de cada item da NF (com_nfe_saldo_item).
+   * Só mexe em qtd_total/descricao; o consumido é sempre calculado ao vivo.
+   */
+  async upsertSaldoNfItens(
+    chaveNfe: string,
+    itens: Array<{ cprod: string; descricao?: string | null; qtd_total: number }>,
+  ): Promise<void> {
+    if (!itens.length) return;
+    await this.prisma.$transaction(
+      itens.map((it) =>
+        this.prisma.com_nfe_saldo_item.upsert({
+          where: { chave_nfe_cprod: { chave_nfe: chaveNfe, cprod: it.cprod } },
+          create: {
+            chave_nfe: chaveNfe,
+            cprod: it.cprod,
+            descricao: it.descricao ?? null,
+            qtd_total: new Prisma.Decimal(it.qtd_total),
+          },
+          update: {
+            descricao: it.descricao ?? null,
+            qtd_total: new Prisma.Decimal(it.qtd_total),
+          },
+        }),
+      ),
+    );
+  }
+
+  /** Total por item (cProd normalizado) da NF, a partir do snapshot. */
+  async totalPorNfItem(chaveNfe: string): Promise<Map<string, number>> {
+    const rows = await this.prisma.com_nfe_saldo_item.findMany({
+      where: { chave_nfe: chaveNfe },
+      select: { cprod: true, qtd_total: true },
+    });
+    const mapa = new Map<string, number>();
+    for (const r of rows) mapa.set(this.normCprod(r.cprod), Number(r.qtd_total));
+    return mapa;
+  }
+
+  /**
+   * Consumido por item (cProd normalizado) de uma NF: soma quantidade_alocada dos
+   * itens tipo='vinculado' de vínculos CONFIRMADOS da chave. Opcionalmente exclui
+   * um pedido (o atual, que será reescrito no upsert).
+   */
+  async consumidoPorNfItem(
+    chaveNfe: string,
+    exceptPedidoIds?: string[],
+  ): Promise<Map<string, number>> {
+    const rows = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        vinculo: {
+          chave_nfe: chaveNfe,
+          confirmado: true,
+          ...(exceptPedidoIds?.length ? { pedido_id: { notIn: exceptPedidoIds } } : {}),
+        },
+      },
+      select: { cprod_xml: true, quantidade_alocada: true, quantidade_xml: true },
+    });
+    const mapa = new Map<string, number>();
+    for (const r of rows) {
+      const k = this.normCprod(r.cprod_xml);
+      if (!k) continue;
+      // Compatibilidade: vínculos antigos sem quantidade_alocada usam quantidade_xml.
+      const q = Number(r.quantidade_alocada ?? r.quantidade_xml ?? 0);
+      mapa.set(k, (mapa.get(k) ?? 0) + (Number.isFinite(q) ? q : 0));
+    }
+    return mapa;
+  }
+
+  /**
+   * Consumido por item do PEDIDO (pro_codigo): soma quantidade_alocada dos itens
+   * tipo='vinculado' de vínculos CONFIRMADOS do pedido. Opcionalmente exclui uma
+   * chave (a atual, que será reescrita).
+   */
+  async consumidoPorPedidoItem(
+    pedidoIds: string[],
+    exceptChave?: string,
+  ): Promise<Map<number, number>> {
+    if (!pedidoIds.length) return new Map();
+    const rows = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        pro_codigo: { not: null },
+        vinculo: {
+          pedido_id: { in: pedidoIds },
+          confirmado: true,
+          ...(exceptChave ? { chave_nfe: { not: exceptChave } } : {}),
+        },
+      },
+      select: { pro_codigo: true, quantidade_alocada: true, quantidade_xml: true },
+    });
+    const mapa = new Map<number, number>();
+    for (const r of rows) {
+      if (r.pro_codigo == null) continue;
+      const q = Number(r.quantidade_alocada ?? r.quantidade_xml ?? 0);
+      mapa.set(r.pro_codigo, (mapa.get(r.pro_codigo) ?? 0) + (Number.isFinite(q) ? q : 0));
+    }
+    return mapa;
+  }
+
+  /**
+   * Dado um conjunto de chaves, retorna as que TÊM snapshot e estão TOTALMENTE
+   * consumidas (Σ qtd_total − Σ alocada confirmada <= tolerância). Chaves sem
+   * snapshot não entram (assume saldo cheio → continuam visíveis).
+   */
+  async chavesSemSaldo(chaves: string[]): Promise<Set<string>> {
+    const semSaldo = new Set<string>();
+    if (!chaves.length) return semSaldo;
+
+    const totais = await this.prisma.com_nfe_saldo_item.groupBy({
+      by: ['chave_nfe'],
+      where: { chave_nfe: { in: chaves } },
+      _sum: { qtd_total: true },
+    });
+    if (!totais.length) return semSaldo;
+
+    const consumidoRows = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        vinculo: { chave_nfe: { in: chaves }, confirmado: true },
+      },
+      select: { quantidade_alocada: true, quantidade_xml: true, vinculo: { select: { chave_nfe: true } } },
+    });
+    const consumidoPorChave = new Map<string, number>();
+    for (const r of consumidoRows) {
+      const chave = r.vinculo?.chave_nfe;
+      if (!chave) continue;
+      const q = Number(r.quantidade_alocada ?? r.quantidade_xml ?? 0);
+      consumidoPorChave.set(chave, (consumidoPorChave.get(chave) ?? 0) + (Number.isFinite(q) ? q : 0));
+    }
+
+    const TOL = 0.001;
+    for (const t of totais) {
+      const total = Number(t._sum.qtd_total ?? 0);
+      if (total <= 0) continue;
+      const consumido = consumidoPorChave.get(t.chave_nfe) ?? 0;
+      if (total - consumido <= TOL) semSaldo.add(t.chave_nfe);
+    }
+    return semSaldo;
+  }
+
   // ----------------------- Persistência do vínculo NF-e ----------------------
 
   /**
@@ -471,6 +621,8 @@ export class VinculacaoNfeRepository {
         produto_xml: true,
         cprod_xml: true,
         quantidade_xml: true,
+        quantidade_alocada: true,
+        excede_saldo: true,
         vuncom_xml: true,
         pro_codigo: true,
         vinculo: { select: { chave_nfe: true } },

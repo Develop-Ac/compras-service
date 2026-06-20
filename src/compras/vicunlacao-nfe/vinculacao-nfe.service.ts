@@ -44,6 +44,11 @@ export interface ItemVinculado {
   quantidade_cotacao: number | null;
   quantidade_pedido: number | null;
   valor_pedido: number | null;
+  // saldo: quanto deste pedido foi alocado do item da NF + saldos disponíveis
+  quantidade_alocada: number | null;
+  saldo_nf: number | null;
+  saldo_pedido: number | null;
+  excede_saldo: boolean;
   match_campo: string;
   match_valor: string | null;
   origem: 'firebird' | 'pg';
@@ -133,6 +138,34 @@ export class VinculacaoNfeService {
       });
     }
 
+    // 3.1) Saldo da NF: semeia o snapshot do total por item (qCom agregado por cProd)
+    //      e carrega o consumido (vínculos confirmados) da NF (outros pedidos) e do
+    //      pedido (outras NFs). Saldo é sempre calculado a partir de confirmados.
+    const totalNf = new Map<string, number>();
+    const seedItens: Array<{ cprod: string; descricao?: string | null; qtd_total: number }> = [];
+    for (const item of itensXml) {
+      const k = this.normRef(item.cProd);
+      if (!k) continue;
+      const q = item.qCom == null ? 0 : Number(item.qCom);
+      totalNf.set(k, (totalNf.get(k) ?? 0) + (Number.isFinite(q) ? q : 0));
+    }
+    // monta seed preservando o cProd original (primeira ocorrência) e a descrição
+    const cprodOriginal = new Map<string, { cprod: string; descricao: string | null }>();
+    for (const item of itensXml) {
+      const k = this.normRef(item.cProd);
+      if (!k || cprodOriginal.has(k)) continue;
+      cprodOriginal.set(k, { cprod: item.cProd ?? k, descricao: item.xProd ?? null });
+    }
+    for (const [k, total] of totalNf) {
+      const orig = cprodOriginal.get(k);
+      seedItens.push({ cprod: orig?.cprod ?? k, descricao: orig?.descricao ?? null, qtd_total: total });
+    }
+    await this.repo.upsertSaldoNfItens(nfe, seedItens);
+
+    // Consumido (mutável: vai sendo decrementado conforme alocamos nesta chamada).
+    const consumidoNf = await this.repo.consumidoPorNfItem(nfe, pedidoIds);
+    const consumidoPedido = await this.repo.consumidoPorPedidoItem(pedidoIds, nfe);
+
     // 4) Vinculação XML <-> cotação (resolve o pro_codigo) + fallback semântico
     const usados = new Set<number>();
     const vinculados: ItemVinculado[] = [];
@@ -148,6 +181,27 @@ export class VinculacaoNfeService {
         const codigo = match.item.pro_codigo;
         const ped = codigo == null ? undefined : pedidoPorCodigo.get(String(codigo));
         if (codigo != null) proCodigosVinculados.add(String(codigo));
+
+        // Saldo deste item: restante da NF (total − consumido) e do pedido.
+        const cprodNorm = this.normRef(item.cProd);
+        const qCom = item.qCom == null ? 0 : Number(item.qCom);
+        const totalItemNf = cprodNorm ? (totalNf.get(cprodNorm) ?? qCom) : qCom;
+        const jaConsumidoNf = cprodNorm ? (consumidoNf.get(cprodNorm) ?? 0) : 0;
+        const saldoNf = Math.max(0, totalItemNf - jaConsumidoNf);
+
+        const codigoNum = codigo == null ? null : Number(codigo);
+        const qtdPedido = ped?.quantidade ?? null;
+        const jaConsumidoPed = codigoNum == null ? 0 : (consumidoPedido.get(codigoNum) ?? 0);
+        const saldoPedido = qtdPedido == null ? null : Math.max(0, qtdPedido - jaConsumidoPed);
+
+        const limites = [qCom, saldoNf, ...(saldoPedido == null ? [] : [saldoPedido])];
+        const alocada = Math.max(0, Math.min(...limites));
+        const excede = qCom > saldoNf + 1e-6 || (saldoPedido != null && qCom > saldoPedido + 1e-6);
+
+        // Reserva o alocado para os próximos itens desta mesma chamada.
+        if (cprodNorm) consumidoNf.set(cprodNorm, jaConsumidoNf + alocada);
+        if (codigoNum != null) consumidoPedido.set(codigoNum, jaConsumidoPed + alocada);
+
         vinculados.push({
           produto_xml: item.xProd,
           cprod_xml: item.cProd ?? null,
@@ -156,8 +210,12 @@ export class VinculacaoNfeService {
           pro_codigo: codigo,
           pro_descricao: match.item.pro_descricao,
           quantidade_cotacao: match.item.quantidade,
-          quantidade_pedido: ped?.quantidade ?? null,
+          quantidade_pedido: qtdPedido,
           valor_pedido: ped?.valor_unitario ?? null,
+          quantidade_alocada: alocada,
+          saldo_nf: saldoNf,
+          saldo_pedido: saldoPedido,
+          excede_saldo: excede,
           match_campo: match.campo,
           match_valor: match.valor,
           origem: match.item._origem,
@@ -207,6 +265,46 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Recalcula, no servidor, a quantidade_alocada e o flag excede_saldo de cada
+   * item tipo='vinculado' a partir dos saldos ATUAIS (vínculos confirmados),
+   * excluindo o próprio pedido (lado NF) e a própria chave (lado pedido) — pois
+   * este vínculo será reescrito. Muta a lista de itens in-place.
+   */
+  private async aplicarSaldoNosItens(
+    pedidoId: string,
+    chaveNfe: string,
+    itens: Prisma.com_pedido_nfe_vinculo_itemCreateManyVinculoInput[],
+  ): Promise<void> {
+    const totalNf = await this.repo.totalPorNfItem(chaveNfe);
+    const consumidoNf = await this.repo.consumidoPorNfItem(chaveNfe, [pedidoId]);
+    const consumidoPedido = await this.repo.consumidoPorPedidoItem([pedidoId], chaveNfe);
+
+    for (const it of itens) {
+      if (it.tipo !== 'vinculado') continue;
+      const cprodNorm = this.normRef(it.cprod_xml);
+      const qCom = it.quantidade_xml == null ? 0 : Number(it.quantidade_xml);
+      const totalItemNf = cprodNorm ? (totalNf.get(cprodNorm) ?? qCom) : qCom;
+      const jaNf = cprodNorm ? (consumidoNf.get(cprodNorm) ?? 0) : 0;
+      const saldoNf = Math.max(0, totalItemNf - jaNf);
+
+      const codigoNum = it.pro_codigo == null ? null : Number(it.pro_codigo);
+      const qtdPedido = it.quantidade_pedido == null ? null : Number(it.quantidade_pedido);
+      const jaPed = codigoNum == null ? 0 : (consumidoPedido.get(codigoNum) ?? 0);
+      const saldoPedido = qtdPedido == null ? null : Math.max(0, qtdPedido - jaPed);
+
+      const limites = [qCom, saldoNf, ...(saldoPedido == null ? [] : [saldoPedido])];
+      const alocada = Math.max(0, Math.min(...limites));
+      const excede = qCom > saldoNf + 1e-6 || (saldoPedido != null && qCom > saldoPedido + 1e-6);
+
+      it.quantidade_alocada = this.toDecimal(alocada);
+      it.excede_saldo = excede;
+
+      if (cprodNorm) consumidoNf.set(cprodNorm, jaNf + alocada);
+      if (codigoNum != null) consumidoPedido.set(codigoNum, jaPed + alocada);
+    }
+  }
+
+  /**
    * Salva (upsert) a conferência de uma NF-e num pedido: cabeçalho + itens
    * tipados, substituindo o snapshot anterior (mesmo par pedido_id + chave).
    */
@@ -233,6 +331,9 @@ export class VinculacaoNfeService {
       match_valor: it.match_valor ?? null,
       origem: it.origem ?? null,
     }));
+
+    // Recalcula quantidade_alocada / excede_saldo a partir dos saldos atuais.
+    await this.aplicarSaldoNosItens(dto.pedido_id, dto.chave_nfe, itens);
 
     const { vinculo, porTipo } = await this.repo.salvarVinculo(
       {
@@ -289,6 +390,8 @@ export class VinculacaoNfeService {
         quantidade_cotacao: this.toDecimal(v.quantidade_cotacao),
         quantidade_pedido: this.toDecimal(v.quantidade_pedido),
         valor_pedido: this.toDecimal(v.valor_pedido),
+        quantidade_alocada: this.toDecimal(v.quantidade_alocada),
+        excede_saldo: v.excede_saldo ?? false,
         match_campo: v.match_campo ?? null,
         match_valor: v.match_valor ?? null,
         origem: 'auto',
@@ -379,6 +482,7 @@ export class VinculacaoNfeService {
       valor_faturado: number; // última vuncom_xml
       chaves_nfe: Set<string>;
       contribs: Array<{ qtd: number; chave: string }>;
+      excede_saldo: boolean;
     }
     const faturadoPorCodigo = new Map<number, AggFaturado>();
     const chavesFaturadas = new Set<string>();
@@ -399,11 +503,15 @@ export class VinculacaoNfeService {
         const cod = Number(it.pro_codigo);
         const atual =
           faturadoPorCodigo.get(cod) ??
-          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [] };
-        const q = num(it.quantidade_xml);
+          { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [], excede_saldo: false };
+        // Base do faturado = quantidade_alocada (quanto deste item da NF foi para
+        // ESTE pedido), evitando dobrar quando a NF é repartida entre pedidos.
+        // Fallback p/ quantidade_xml em vínculos antigos sem alocação gravada.
+        const q = num(it.quantidade_alocada ?? it.quantidade_xml);
         atual.quantidade_faturada += q;
         // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
         atual.valor_faturado = num(it.vuncom_xml);
+        if (it.excede_saldo) atual.excede_saldo = true;
         if (chave) {
           atual.chaves_nfe.add(chave);
           atual.contribs.push({ qtd: q, chave });
@@ -503,6 +611,7 @@ export class VinculacaoNfeService {
         diferenca_valor: valorFaturado - valorPedido,
         situacao,
         status_produto: statusProduto,
+        excede_saldo: agg?.excede_saldo ?? false,
         chaves_nfe: chavesNfe,
       };
     });
@@ -721,6 +830,10 @@ export class VinculacaoNfeService {
           quantidade_cotacao: num(it.quantidade_cotacao),
           quantidade_pedido: num(it.quantidade_pedido),
           valor_pedido: num(it.valor_pedido),
+          quantidade_alocada: num(it.quantidade_alocada),
+          saldo_nf: null,
+          saldo_pedido: null,
+          excede_saldo: it.excede_saldo ?? false,
           match_campo: it.match_campo ?? '',
           match_valor: it.match_valor,
           origem: (it.origem as any) ?? 'firebird',

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotaFiscalRepository } from './notaFiscal.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { FornecedorGrupoService } from '../../fornecedor-grupo/fornecedor-grupo.service';
 import axios from 'axios';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
@@ -16,6 +17,7 @@ export class NotaFiscalService {
   constructor(
     private readonly notaFiscalRepository: NotaFiscalRepository,
     private readonly prisma: PrismaService,
+    private readonly grupo: FornecedorGrupoService,
   ) {}
 
   async getNfeDistribuicao() {
@@ -23,7 +25,7 @@ export class NotaFiscalService {
     return data;
   }
 
-  async getNfeDisponiveis(pedidoId?: string) {
+  async getNfeDisponiveis(pedidoId?: string, mostrarTodas = false) {
     const data = (await this.notaFiscalRepository.fetchNfeDisponiveis()) as Array<
       Record<string, any>
     >;
@@ -50,14 +52,17 @@ export class NotaFiscalService {
       row.STATUS_ERP = 'PENDENTE';
     }
 
-    // Sem pedido de referência: mantém o comportamento antigo (apenas pendentes).
-    if (!pedidoId) return data;
+    // Sem pedido de referência: mantém o comportamento antigo (apenas pendentes),
+    // mas ainda escondendo as NF-e sem saldo.
+    if (!pedidoId) {
+      return this.removerChavesSemSaldo(data);
+    }
 
     // Com pedido: inclui também as NF-e já LANCADA no ERP cuja emissão é
     // POSTERIOR à data do pedido (uma NF do pedido é emitida depois dele).
     const pedido = await this.prisma.com_pedido.findUnique({
       where: { id: pedidoId },
-      select: { created_at: true },
+      select: { created_at: true, for_codigo: true },
     });
     const dataPedido = pedido?.created_at ?? null;
 
@@ -93,7 +98,75 @@ export class NotaFiscalService {
         STATUS_ERP: 'LANCADA',
       }));
 
-    return [...data, ...lancadasMapeadas];
+    let resultado = [...data, ...lancadasMapeadas];
+
+    // Filtro por GRUPO de fornecedores (matriz/filiais): por padrão mostra só as
+    // NF-e emitidas por algum CNPJ do grupo do fornecedor do pedido. 'mostrarTodas'
+    // libera o restante. Mesmo critério usado no auto-vínculo (cnpjsDoGrupo).
+    if (!mostrarTodas && pedido?.for_codigo != null) {
+      const cnpjsGrupo = new Set(await this.grupo.cnpjsDoGrupo(pedido.for_codigo));
+      if (cnpjsGrupo.size) {
+        resultado = resultado.filter((r) => {
+          const cnpj = String(r?.CPF_CNPJ_EMITENTE ?? '').replace(/\D/g, '');
+          return cnpj && cnpjsGrupo.has(cnpj);
+        });
+      }
+    }
+
+    // Esconde as NF-e sem saldo (totalmente consumidas por vínculos confirmados).
+    return this.removerChavesSemSaldo(resultado);
+  }
+
+  /**
+   * Remove da lista as NF-e que TÊM snapshot de saldo (com_nfe_saldo_item) e estão
+   * TOTALMENTE consumidas por vínculos confirmados. NF sem snapshot (nunca vinculada)
+   * é mantida — assume saldo cheio. Espelha VinculacaoNfeRepository.chavesSemSaldo.
+   */
+  private async removerChavesSemSaldo(
+    rows: Array<Record<string, any>>,
+  ): Promise<Array<Record<string, any>>> {
+    const chaves = rows
+      .map((r) => (r?.CHAVE_NFE == null ? null : String(r.CHAVE_NFE)))
+      .filter((c): c is string => !!c);
+    if (!chaves.length) return rows;
+
+    const totais = await this.prisma.com_nfe_saldo_item.groupBy({
+      by: ['chave_nfe'],
+      where: { chave_nfe: { in: chaves } },
+      _sum: { qtd_total: true },
+    });
+    if (!totais.length) return rows;
+
+    const consumidoRows = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: {
+        tipo: 'vinculado',
+        vinculo: { chave_nfe: { in: chaves }, confirmado: true },
+      },
+      select: {
+        quantidade_alocada: true,
+        quantidade_xml: true,
+        vinculo: { select: { chave_nfe: true } },
+      },
+    });
+    const consumidoPorChave = new Map<string, number>();
+    for (const r of consumidoRows) {
+      const chave = r.vinculo?.chave_nfe;
+      if (!chave) continue;
+      const q = Number(r.quantidade_alocada ?? r.quantidade_xml ?? 0);
+      consumidoPorChave.set(chave, (consumidoPorChave.get(chave) ?? 0) + (Number.isFinite(q) ? q : 0));
+    }
+
+    const TOL = 0.001;
+    const semSaldo = new Set<string>();
+    for (const t of totais) {
+      const total = Number(t._sum.qtd_total ?? 0);
+      if (total <= 0) continue;
+      const consumido = consumidoPorChave.get(t.chave_nfe) ?? 0;
+      if (total - consumido <= TOL) semSaldo.add(t.chave_nfe);
+    }
+
+    if (!semSaldo.size) return rows;
+    return rows.filter((r) => !semSaldo.has(String(r?.CHAVE_NFE ?? '')));
   }
 
   private decodeXmlFromField(xmlCompleto: string): string {

@@ -236,6 +236,9 @@ model com_pedido_nfe_vinculo_item {
   quantidade_cotacao  Decimal? @db.Decimal(15, 4)
   quantidade_pedido   Decimal? @db.Decimal(15, 4)
   valor_pedido        Decimal? @db.Decimal(15, 4)
+  // saldo: quanto DESTE pedido foi alocado do item da NF (quantidade_xml = qCom total, informativo)
+  quantidade_alocada  Decimal? @db.Decimal(15, 4)
+  excede_saldo        Boolean  @default(false)
   // metadados do casamento
   match_campo         String?  @db.VarChar(60)
   match_valor         String?
@@ -244,6 +247,22 @@ model com_pedido_nfe_vinculo_item {
   vinculo             com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
 
   @@index([vinculo_id])
+}
+
+/// Snapshot do total de cada item de uma NF-e (semeado do XML na 1ª vinculação).
+/// Serve para esconder "NF sem saldo" na listagem sem reparsear o XML. O consumido
+/// é sempre calculado ao vivo dos vínculos confirmados (com_pedido_nfe_vinculo_item).
+model com_nfe_saldo_item {
+  id         String   @id @default(cuid())
+  chave_nfe  String   @db.VarChar(44)
+  cprod      String
+  descricao  String?
+  qtd_total  Decimal  @db.Decimal(15, 4)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([chave_nfe, cprod])
+  @@index([chave_nfe])
 }
 
 model est_contagem {

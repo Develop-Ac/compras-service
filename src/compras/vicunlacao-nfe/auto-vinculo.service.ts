@@ -137,7 +137,7 @@ export class AutoVinculoService {
     if (cnpjForn) cnpjsGrupo.add(cnpjForn);
 
     // Candidatas: emitente é do grupo (qualquer CNPJ do grupo) OU nome similar E data de emissão > pedido.
-    const candidatas = notas.filter((n) => {
+    let candidatas = notas.filter((n) => {
       const dataEmissao = this.toDate(n.DATA_EMISSAO);
       if (!dataEmissao || dataEmissao <= pedido.created_at) return false;
 
@@ -146,6 +146,16 @@ export class AutoVinculoService {
       const nomeBate = this.nomeSimilar(nomeForn, n.NOME_EMITENTE);
       return cnpjBate || nomeBate;
     });
+
+    // Não sugere NF sem saldo (totalmente consumida por vínculos confirmados).
+    if (candidatas.length) {
+      const semSaldo = await this.repo.chavesSemSaldo(
+        candidatas.map((n) => String(n.CHAVE_NFE ?? '').trim()).filter(Boolean),
+      );
+      if (semSaldo.size) {
+        candidatas = candidatas.filter((n) => !semSaldo.has(String(n.CHAVE_NFE ?? '').trim()));
+      }
+    }
 
     let criadas = 0;
 

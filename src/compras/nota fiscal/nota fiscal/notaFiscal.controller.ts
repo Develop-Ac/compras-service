@@ -15,10 +15,15 @@ export class NotaFiscalController {
 
     @Get('disponiveis')
     @ApiOperation({ summary: 'Lista as NF-e disponíveis (sem XML_COMPLETO) para o modal de seleção' })
-    @ApiQuery({ name: 'pedidoId', type: String, required: false, description: 'com_pedido.id — quando informado, inclui também as NF-e já lançadas com emissão posterior à data do pedido' })
-    @ApiResponse({ status: 200, description: 'Lista de NF-e disponíveis que possuem XML, sem o XML_COMPLETO' })
-    async getNfeDisponiveis(@Query('pedidoId') pedidoId?: string) {
-    return this.notaFiscalService.getNfeDisponiveis(pedidoId);
+    @ApiQuery({ name: 'pedidoId', type: String, required: false, description: 'com_pedido.id — quando informado, inclui também as NF-e já lançadas com emissão posterior à data do pedido e filtra pelo GRUPO de fornecedores do pedido' })
+    @ApiQuery({ name: 'mostrarTodas', type: Boolean, required: false, description: 'Quando true, ignora o filtro por grupo de fornecedores e lista todas as NF-e (mantém o filtro de saldo)' })
+    @ApiResponse({ status: 200, description: 'Lista de NF-e disponíveis que possuem XML e ainda têm saldo, sem o XML_COMPLETO' })
+    async getNfeDisponiveis(
+      @Query('pedidoId') pedidoId?: string,
+      @Query('mostrarTodas') mostrarTodas?: string,
+    ) {
+    const todas = mostrarTodas === 'true' || mostrarTodas === '1';
+    return this.notaFiscalService.getNfeDisponiveis(pedidoId, todas);
     }
 
     @Get('danfe')
