@@ -39,18 +39,28 @@ export class AutoVinculoService {
     private readonly grupo: FornecedorGrupoService,
   ) {}
 
+  /** Evita varreduras sobrepostas quando o intervalo é curto (ex.: a cada minuto). */
+  private rodando = false;
+
   /**
    * Disparo periódico. Intervalo configurável por env AUTOVINCULO_CRON
-   * (expressão cron), default a cada 30 minutos.
+   * (expressão cron), default a cada 1 minuto.
    */
-  @Cron(process.env.AUTOVINCULO_CRON || CronExpression.EVERY_30_MINUTES, {
+  @Cron(process.env.AUTOVINCULO_CRON || CronExpression.EVERY_MINUTE, {
     name: 'auto-vinculo-nfe',
   })
   async cronVarredura() {
+    if (this.rodando) {
+      this.logger.warn('Varredura anterior ainda em execução; pulando este disparo.');
+      return;
+    }
+    this.rodando = true;
     try {
       await this.executarVarredura();
     } catch (err: any) {
       this.logger.error(`Falha geral na varredura de auto-vínculo: ${err?.message || err}`);
+    } finally {
+      this.rodando = false;
     }
   }
 
