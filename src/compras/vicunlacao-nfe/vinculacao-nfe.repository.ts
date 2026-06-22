@@ -606,11 +606,20 @@ export class VinculacaoNfeRepository {
 
   // --------------------- Conferência por item (fechamento) -------------------
 
-  /** Lê o pedido (id, status, data_recebimento) para a conferência. */
+  /** Lê o pedido (id, status, data_recebimento, ipi_no_valor) para a conferência. */
   async findPedidoParaConferencia(pedidoId: string) {
     return this.prisma.com_pedido.findUnique({
       where: { id: pedidoId },
-      select: { id: true, status: true, data_recebimento: true },
+      select: { id: true, status: true, data_recebimento: true, ipi_no_valor: true },
+    });
+  }
+
+  /** Liga/desliga o flag "IPI incluso no valor unitário" do pedido. */
+  async setPedidoIpiNoValor(pedidoId: string, valor: boolean) {
+    return this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { ipi_no_valor: valor },
+      select: { id: true, ipi_no_valor: true },
     });
   }
 

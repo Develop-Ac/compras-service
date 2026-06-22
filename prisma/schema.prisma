@@ -163,6 +163,9 @@ model com_pedido {
   status         String?            @db.VarChar(50)
   categoriaFrete String?            @db.VarChar(255)
   data_recebimento DateTime?
+  // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
+  // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
+  ipi_no_valor   Boolean            @default(false)
   itens          com_pedido_itens[]
   nfe_vinculos   com_pedido_nfe_vinculo[]
 

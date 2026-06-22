@@ -152,6 +152,26 @@ export class VinculacaoNfeController {
     return this.autoVinculo.executarVarredura();
   }
 
+  // POST /compras/vinculacao-nfe/pedido/:pedidoId/ipi-no-valor  (body: { ipi_no_valor })
+  // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('pedido/:pedidoId/ipi-no-valor')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Liga/desliga "IPI incluso no valor unitário" do pedido',
+    description:
+      'Quando ligado, a Conferência Pedido × Faturado soma o IPI por unidade da NF ' +
+      'ao valor faturado antes de comparar com o valor do pedido (que já inclui IPI).',
+  })
+  @ApiParam({ name: 'pedidoId', description: 'com_pedido.id' })
+  @ApiResponse({ status: 200, description: 'Flag atualizado.' })
+  @ApiResponse({ status: 404, description: 'Pedido não encontrado.' })
+  async setIpiNoValor(
+    @Param('pedidoId') pedidoId: string,
+    @Body() body: { ipi_no_valor?: boolean },
+  ) {
+    return this.service.setIpiNoValor(pedidoId, Boolean(body?.ipi_no_valor));
+  }
+
   // POST /compras/vinculacao-nfe/resumo  (body: { chaves: string[] })
   // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
   @Post('resumo')

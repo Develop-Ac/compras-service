@@ -521,6 +521,30 @@ export class VinculacaoNfeService {
       chave_nfe: string;
     }> = [];
 
+    // IPI no valor: quando o pedido tem o flag ligado, somamos o IPI por unidade
+    // da NF ao valor faturado (o valor do pedido já inclui IPI). O IPI vem do XML,
+    // lido sob demanda e memoizado por chave.
+    const ipiNoValor = !!pedido.ipi_no_valor;
+    const ipiCachePorChave = new Map<string, Map<string, number>>();
+    const getIpiUnitMap = async (chave: string): Promise<Map<string, number>> => {
+      const cached = ipiCachePorChave.get(chave);
+      if (cached) return cached;
+      let map = new Map<string, number>();
+      try {
+        // Postgres (conciliação) primeiro; fallback Firebird, igual ao vincular().
+        let xml: string | Buffer | null = await this.repo.findConciliacaoXmlByChave(chave);
+        if (!xml) {
+          const row = await this.repo.findXmlByChave(chave);
+          xml = row?.XML_COMPLETO ?? null;
+        }
+        if (xml) map = this.parseIpiUnitPorCprod(xml);
+      } catch {
+        // sem IPI se não for possível ler/parsear o XML
+      }
+      ipiCachePorChave.set(chave, map);
+      return map;
+    };
+
     for (const it of itensVinculo) {
       const chave = it.vinculo?.chave_nfe ?? '';
       if (chave) chavesFaturadas.add(chave);
@@ -536,7 +560,13 @@ export class VinculacaoNfeService {
         const q = num(it.quantidade_alocada ?? it.quantidade_xml);
         atual.quantidade_faturada += q;
         // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
-        atual.valor_faturado = num(it.vuncom_xml);
+        // Com IPI no valor, soma o IPI por unidade da NF (lido do XML) ao unitário.
+        let unitFaturado = num(it.vuncom_xml);
+        if (ipiNoValor && chave) {
+          const ipiMap = await getIpiUnitMap(chave);
+          unitFaturado += ipiMap.get(this.normRef(it.cprod_xml)) ?? 0;
+        }
+        atual.valor_faturado = unitFaturado;
         if (it.excede_saldo) atual.excede_saldo = true;
         if (it.id) atual.itemIds.push(it.id);
         // Guarda o código/descrição do produto no XML (dedup por cprod_xml).
@@ -707,6 +737,7 @@ export class VinculacaoNfeService {
     return {
       pedido_id: pedido.id,
       status: pedido.status ?? '',
+      ipi_no_valor: ipiNoValor,
       data_recebimento: pedido.data_recebimento
         ? pedido.data_recebimento.toISOString()
         : null,
@@ -722,6 +753,19 @@ export class VinculacaoNfeService {
       itens,
       itens_nf_sem_pedido: itensNfComSaldo,
     };
+  }
+
+  /**
+   * Liga/desliga o flag "IPI incluso no valor unitário" do pedido. Quando ligado,
+   * a conferência soma o IPI por unidade da NF ao valor faturado antes de comparar.
+   */
+  async setIpiNoValor(pedidoId: string, valor: boolean) {
+    const pedido = await this.repo.findPedidoParaConferencia(pedidoId);
+    if (!pedido) {
+      throw new NotFoundException(`Pedido ${pedidoId} não encontrado.`);
+    }
+    const atualizado = await this.repo.setPedidoIpiNoValor(pedidoId, !!valor);
+    return { pedido_id: atualizado.id, ipi_no_valor: atualizado.ipi_no_valor };
   }
 
   /**
@@ -1196,6 +1240,40 @@ export class VinculacaoNfeService {
       });
     }
     return itens;
+  }
+
+  /**
+   * Mapa cProd (normalizado) -> IPI por unidade, lido do XML da NF.
+   *
+   * O <vIPI> fica em <det><imposto><IPI>..., FORA do <prod>, por isso iteramos por
+   * <det> (que contém prod + imposto). Soma vIPI e qCom por cProd e devolve o IPI
+   * unitário (vIPI_total / qCom_total). Itens sem IPI (IPINT) ficam com 0.
+   */
+  private parseIpiUnitPorCprod(raw: string | Buffer): Map<string, number> {
+    const xml = this.sanitizeXml(raw);
+    const detRe = /<(?:\w+:)?det\b[^>]*>([\s\S]*?)<\/(?:\w+:)?det>/gi;
+
+    const acc = new Map<string, { vipi: number; qcom: number }>();
+
+    let m: RegExpExecArray | null;
+    while ((m = detRe.exec(xml)) !== null) {
+      const bloco = m[1];
+      const cprod = this.normRef(this.tagText(bloco, 'cProd'));
+      if (!cprod) continue;
+      const qcom = this.toNumber(this.tagText(bloco, 'qCom')) ?? 0;
+      const vipi = this.toNumber(this.tagText(bloco, 'vIPI')) ?? 0;
+
+      const atual = acc.get(cprod) ?? { vipi: 0, qcom: 0 };
+      atual.vipi += Number.isFinite(vipi) ? vipi : 0;
+      atual.qcom += Number.isFinite(qcom) ? qcom : 0;
+      acc.set(cprod, atual);
+    }
+
+    const out = new Map<string, number>();
+    for (const [cprod, { vipi, qcom }] of acc) {
+      out.set(cprod, qcom > 0 ? vipi / qcom : 0);
+    }
+    return out;
   }
 
   /** Extrai o texto de uma tag dentro de um trecho de XML (aceita prefixo de namespace). */
