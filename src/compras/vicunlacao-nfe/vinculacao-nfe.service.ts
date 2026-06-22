@@ -529,7 +529,7 @@ export class VinculacaoNfeService {
     //  - desconto (vDesc) e acréscimo (vOutro): aplicados SEMPRE (valor líquido).
     //  - IPI (vIPI): somado só quando o pedido inclui IPI no valor (flag).
     const ipiNoValor = !!pedido.ipi_no_valor;
-    type AjusteUnit = { ipiUnit: number; descUnit: number; outroUnit: number };
+    type AjusteUnit = { fator: number; precoUnit: number; ipiUnit: number; descUnit: number; outroUnit: number };
     const ajustesCachePorChave = new Map<string, Map<string, AjusteUnit>>();
     const getAjustesMap = async (chave: string): Promise<Map<string, AjusteUnit>> => {
       const cached = ajustesCachePorChave.get(chave);
@@ -559,21 +559,29 @@ export class VinculacaoNfeService {
         const atual: AggFaturado =
           faturadoPorCodigo.get(cod) ??
           { quantidade_faturada: 0, valor_faturado: 0, chaves_nfe: new Set<string>(), contribs: [], excede_saldo: false, xmlProds: new Map(), itemIds: [] };
+        // Ajustes da NF (já na unidade base): fator de conversão de unidade,
+        // desconto/acréscimo e IPI por unidade.
+        const aj = chave
+          ? (await getAjustesMap(chave)).get(this.normRef(it.cprod_xml))
+          : undefined;
+        const fator = aj?.fator ?? 1;
+
         // Base do faturado = quantidade_alocada (quanto deste item da NF foi para
         // ESTE pedido), evitando dobrar quando a NF é repartida entre pedidos.
         // Fallback p/ quantidade_xml em vínculos antigos sem alocação gravada.
-        const q = num(it.quantidade_alocada ?? it.quantidade_xml);
+        // Convertida p/ a unidade base quando a NF é em outra unidade (ex.: 3 CJ
+        // * 100 = 300 UN), para casar com a quantidade do pedido.
+        const q = num(it.quantidade_alocada ?? it.quantidade_xml) * fator;
         atual.quantidade_faturada += q;
-        // "última" vuncom_xml: sobrescreve com o valor mais recente encontrado.
-        // Valor líquido: subtrai desconto e soma acréscimo por unidade (sempre);
-        // soma o IPI por unidade só quando o pedido inclui IPI no valor.
+        // Unitário faturado na unidade base. Com conversão (fator != 1) usa o preço
+        // tributável (vUnTrib/UN); senão mantém o vUnCom do snapshot ("última"
+        // sobrescreve). Depois aplica desconto (−), acréscimo (+) e IPI (+ se o
+        // pedido inclui IPI no valor).
         let unitFaturado = num(it.vuncom_xml);
-        if (chave) {
-          const aj = (await getAjustesMap(chave)).get(this.normRef(it.cprod_xml));
-          if (aj) {
-            unitFaturado += -aj.descUnit + aj.outroUnit;
-            if (ipiNoValor) unitFaturado += aj.ipiUnit;
-          }
+        if (aj) {
+          if (fator !== 1 && aj.precoUnit > 0) unitFaturado = aj.precoUnit;
+          unitFaturado += -aj.descUnit + aj.outroUnit;
+          if (ipiNoValor) unitFaturado += aj.ipiUnit;
         }
         atual.valor_faturado = Math.max(0, unitFaturado);
         if (it.excede_saldo) atual.excede_saldo = true;
@@ -1254,22 +1262,33 @@ export class VinculacaoNfeService {
   }
 
   /**
-   * Mapa cProd (normalizado) -> ajustes POR UNIDADE da NF: IPI, desconto e
-   * acréscimo (outras despesas).
+   * Mapa cProd (normalizado) -> ajustes POR UNIDADE da NF, já na UNIDADE BASE:
+   * fator de conversão, preço unitário, IPI, desconto e acréscimo.
    *
-   * Iteramos por <det> (que contém <prod> + <imposto>): vDesc e vOutro ficam no
-   * <prod>; vIPI fica em <imposto><IPI>. Na NF-e esses três são TOTAIS da linha,
-   * então o valor por unidade é (total / qCom_total) — é a divisão pela quantidade
-   * pedida pelo requisito ("se for total, divide pela quantidade"). Com qCom=1 o
-   * total já é o unitário. Itens sem a tag ficam com 0.
+   * Iteramos por <det> (que contém <prod> + <imposto>). O <prod> traz a unidade
+   * comercial (uCom/qCom/vUnCom) e a tributável (uTrib/qTrib/vUnTrib); vDesc/vOutro
+   * estão no <prod> e vIPI em <imposto><IPI>. Os três (desc/acrésc/IPI) são TOTAIS
+   * da linha.
+   *
+   * Conversão de unidade: quando uCom != uTrib (ex.: NF em CJ e estoque em UN, com
+   * uTrib=UN/qTrib=300/vUnTrib=preço por UN), passamos a medir na unidade tributável
+   * (base): fator = qTrib/qCom, preço = vUnTrib, e os totais são divididos por qTrib.
+   * Quando as unidades coincidem, fica tudo na comercial (fator=1, /qCom), como antes.
    */
   private parseAjustesUnitPorCprod(
     raw: string | Buffer,
-  ): Map<string, { ipiUnit: number; descUnit: number; outroUnit: number }> {
+  ): Map<string, { fator: number; precoUnit: number; ipiUnit: number; descUnit: number; outroUnit: number }> {
     const xml = this.sanitizeXml(raw);
     const detRe = /<(?:\w+:)?det\b[^>]*>([\s\S]*?)<\/(?:\w+:)?det>/gi;
+    const normUnit = (s: string) => String(s || '').trim().toUpperCase();
 
-    const acc = new Map<string, { vipi: number; vdesc: number; voutro: number; qcom: number }>();
+    interface Acc {
+      vipi: number; vdesc: number; voutro: number;
+      qcom: number; qtrib: number;
+      uCom: string; uTrib: string;
+      vUnCom: number; vUnTrib: number;
+    }
+    const acc = new Map<string, Acc>();
 
     let m: RegExpExecArray | null;
     while ((m = detRe.exec(xml)) !== null) {
@@ -1277,25 +1296,43 @@ export class VinculacaoNfeService {
       const cprod = this.normRef(this.tagText(bloco, 'cProd'));
       if (!cprod) continue;
       const qcom = this.toNumber(this.tagText(bloco, 'qCom')) ?? 0;
+      const qtrib = this.toNumber(this.tagText(bloco, 'qTrib')) ?? 0;
       const vipi = this.toNumber(this.tagText(bloco, 'vIPI')) ?? 0;
       const vdesc = this.toNumber(this.tagText(bloco, 'vDesc')) ?? 0;
       const voutro = this.toNumber(this.tagText(bloco, 'vOutro')) ?? 0;
+      const vUnCom = this.toNumber(this.tagText(bloco, 'vUnCom')) ?? 0;
+      const vUnTrib = this.toNumber(this.tagText(bloco, 'vUnTrib')) ?? 0;
+      const uCom = normUnit(this.tagText(bloco, 'uCom'));
+      const uTrib = normUnit(this.tagText(bloco, 'uTrib'));
 
-      const atual = acc.get(cprod) ?? { vipi: 0, vdesc: 0, voutro: 0, qcom: 0 };
-      atual.vipi += Number.isFinite(vipi) ? vipi : 0;
-      atual.vdesc += Number.isFinite(vdesc) ? vdesc : 0;
-      atual.voutro += Number.isFinite(voutro) ? voutro : 0;
-      atual.qcom += Number.isFinite(qcom) ? qcom : 0;
-      acc.set(cprod, atual);
+      const a = acc.get(cprod) ?? {
+        vipi: 0, vdesc: 0, voutro: 0, qcom: 0, qtrib: 0,
+        uCom: '', uTrib: '', vUnCom: 0, vUnTrib: 0,
+      };
+      a.vipi += Number.isFinite(vipi) ? vipi : 0;
+      a.vdesc += Number.isFinite(vdesc) ? vdesc : 0;
+      a.voutro += Number.isFinite(voutro) ? voutro : 0;
+      a.qcom += Number.isFinite(qcom) ? qcom : 0;
+      a.qtrib += Number.isFinite(qtrib) ? qtrib : 0;
+      if (uCom) a.uCom = uCom;
+      if (uTrib) a.uTrib = uTrib;
+      if (vUnCom > 0) a.vUnCom = vUnCom;
+      if (vUnTrib > 0) a.vUnTrib = vUnTrib;
+      acc.set(cprod, a);
     }
 
-    const out = new Map<string, { ipiUnit: number; descUnit: number; outroUnit: number }>();
+    const out = new Map<string, { fator: number; precoUnit: number; ipiUnit: number; descUnit: number; outroUnit: number }>();
     for (const [cprod, v] of acc) {
-      const q = v.qcom > 0 ? v.qcom : 1; // totais da linha -> por unidade
+      const converter = !!v.uCom && !!v.uTrib && v.uCom !== v.uTrib && v.qcom > 0 && v.qtrib > 0;
+      const fator = converter ? v.qtrib / v.qcom : 1;
+      const denom = (converter ? v.qtrib : v.qcom) > 0 ? (converter ? v.qtrib : v.qcom) : 1;
+      const precoUnit = converter ? v.vUnTrib : v.vUnCom;
       out.set(cprod, {
-        ipiUnit: v.vipi / q,
-        descUnit: v.vdesc / q,
-        outroUnit: v.voutro / q,
+        fator,
+        precoUnit,
+        ipiUnit: v.vipi / denom,
+        descUnit: v.vdesc / denom,
+        outroUnit: v.voutro / denom,
       });
     }
     return out;
