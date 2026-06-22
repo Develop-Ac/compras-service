@@ -563,6 +563,32 @@ export class VinculacaoNfeRepository {
     return cabecalhos.map((c) => ({ ...c, totais: mapa.get(c.id) ?? {} }));
   }
 
+  /**
+   * Vínculos CONFIRMADOS de um conjunto de chaves de NF, com os itens do lado XML
+   * (vinculado / xml_sem_vinculo). Usado para o resumo da listagem e o detalhe da NF.
+   */
+  async findVinculosConfirmadosByChaves(chaves: string[]) {
+    if (!chaves.length) return [];
+    return this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { chave_nfe: { in: chaves }, confirmado: true },
+      select: {
+        id: true,
+        pedido_id: true,
+        pedido_cotacao: true,
+        chave_nfe: true,
+        itens: {
+          where: { tipo: { in: ['vinculado', 'xml_sem_vinculo'] } },
+          select: {
+            tipo: true,
+            cprod_xml: true,
+            produto_xml: true,
+            pro_codigo: true,
+          },
+        },
+      },
+    });
+  }
+
   /** Carrega um vínculo (cabeçalho + itens). */
   async findVinculoById(vinculoId: string) {
     return this.prisma.com_pedido_nfe_vinculo.findUnique({

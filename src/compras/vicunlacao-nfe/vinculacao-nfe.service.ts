@@ -976,6 +976,122 @@ export class VinculacaoNfeService {
     };
   }
 
+  /** Normaliza o cProd da NF para comparação (trim + remove zeros à esquerda). */
+  private normCprod(value?: string | null): string {
+    return String(value ?? '').trim().replace(/^0+/, '');
+  }
+
+  /**
+   * Resumo da vinculação CONFIRMADA por chave de NF (para a listagem de NF):
+   * conta os itens do XML que foram vinculados a um pedido x o total de itens
+   * do XML, devolvendo o percentual de conclusão e os pedidos envolvidos.
+   * Apenas vínculos confirmados entram na conta.
+   */
+  async resumoVinculacaoPorChaves(chaves: string[]) {
+    const limpas = [
+      ...new Set((chaves ?? []).map((c) => String(c ?? '').trim()).filter(Boolean)),
+    ];
+    const out: Record<
+      string,
+      { total_itens: number; vinculados: number; percentual: number; pedidos: number[] }
+    > = {};
+    if (!limpas.length) return out;
+
+    const vinculos = await this.repo.findVinculosConfirmadosByChaves(limpas);
+
+    const porChave = new Map<
+      string,
+      { total: Set<string>; vinc: Set<string>; pedidos: Set<number> }
+    >();
+
+    for (const v of vinculos) {
+      const acc =
+        porChave.get(v.chave_nfe) ??
+        { total: new Set<string>(), vinc: new Set<string>(), pedidos: new Set<number>() };
+      if (v.pedido_cotacao != null) acc.pedidos.add(Number(v.pedido_cotacao));
+      for (const it of v.itens) {
+        const key = this.normCprod(it.cprod_xml);
+        if (!key) continue;
+        acc.total.add(key);
+        if (it.tipo === 'vinculado') acc.vinc.add(key);
+      }
+      porChave.set(v.chave_nfe, acc);
+    }
+
+    for (const [chave, acc] of porChave) {
+      const total = acc.total.size;
+      const vinculados = acc.vinc.size;
+      out[chave] = {
+        total_itens: total,
+        vinculados,
+        percentual: total > 0 ? Math.round((vinculados / total) * 100) : 0,
+        pedidos: [...acc.pedidos].sort((a, b) => a - b),
+      };
+    }
+
+    return out;
+  }
+
+  /**
+   * Detalhe da vinculação CONFIRMADA de uma NF: para cada item do XML que foi
+   * vinculado, devolve a qual pedido (pedido_id + pedido_cotacao) ele pertence.
+   * Usado na tela de detalhe da NF para mostrar/abrir o pedido de cada item.
+   */
+  async vinculacaoPorChave(chave: string) {
+    const chaveNfe = String(chave ?? '').trim();
+    const out = {
+      chave_nfe: chaveNfe,
+      resumo: { total_itens: 0, vinculados: 0, percentual: 0 },
+      pedidos: [] as Array<{ pedido_id: string; pedido_cotacao: number }>,
+      itens: [] as Array<{
+        cprod_xml: string;
+        cprod_norm: string;
+        produto_xml: string | null;
+        pro_codigo: number | null;
+        pedido_id: string;
+        pedido_cotacao: number;
+      }>,
+    };
+    if (!chaveNfe) return out;
+
+    const vinculos = await this.repo.findVinculosConfirmadosByChaves([chaveNfe]);
+
+    const totalSet = new Set<string>();
+    const vincSet = new Set<string>();
+    const pedidosMap = new Map<string, number>();
+
+    for (const v of vinculos) {
+      if (v.pedido_cotacao != null) pedidosMap.set(v.pedido_id, Number(v.pedido_cotacao));
+      for (const it of v.itens) {
+        const norm = this.normCprod(it.cprod_xml);
+        if (!norm) continue;
+        totalSet.add(norm);
+        if (it.tipo === 'vinculado') {
+          vincSet.add(norm);
+          out.itens.push({
+            cprod_xml: it.cprod_xml ?? '',
+            cprod_norm: norm,
+            produto_xml: it.produto_xml ?? null,
+            pro_codigo: it.pro_codigo,
+            pedido_id: v.pedido_id,
+            pedido_cotacao: Number(v.pedido_cotacao ?? 0),
+          });
+        }
+      }
+    }
+
+    out.pedidos = [...pedidosMap.entries()]
+      .map(([pedido_id, pedido_cotacao]) => ({ pedido_id, pedido_cotacao }))
+      .sort((a, b) => a.pedido_cotacao - b.pedido_cotacao);
+    out.resumo = {
+      total_itens: totalSet.size,
+      vinculados: vincSet.size,
+      percentual: totalSet.size > 0 ? Math.round((vincSet.size / totalSet.size) * 100) : 0,
+    };
+
+    return out;
+  }
+
   /** Remove um vínculo salvo (cascade apaga os itens). */
   async removerVinculo(vinculoId: string) {
     const v = await this.repo.findVinculoById(vinculoId);

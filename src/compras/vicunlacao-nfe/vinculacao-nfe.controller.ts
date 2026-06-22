@@ -152,6 +152,38 @@ export class VinculacaoNfeController {
     return this.autoVinculo.executarVarredura();
   }
 
+  // POST /compras/vinculacao-nfe/resumo  (body: { chaves: string[] })
+  // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('resumo')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Resumo da vinculação (confirmada) por chave de NF — para a listagem',
+    description:
+      'Recebe um lote de chaves de NF-e e devolve, por chave, o total de itens do ' +
+      'XML, quantos foram vinculados a um pedido e o percentual de conclusão ' +
+      '(somente vínculos confirmados). Retorna um mapa { [chave]: { total_itens, ' +
+      'vinculados, percentual, pedidos } }.',
+  })
+  @ApiResponse({ status: 200, description: 'Resumo calculado.' })
+  async resumoPorChaves(@Body() body: { chaves?: string[] }) {
+    return this.service.resumoVinculacaoPorChaves(body?.chaves ?? []);
+  }
+
+  // GET /compras/vinculacao-nfe/por-chave/:chave
+  // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Get('por-chave/:chave')
+  @ApiOperation({
+    summary: 'Vinculação (confirmada) de uma NF, item a item, com o pedido de cada item',
+    description:
+      'Para a tela de detalhe da NF: devolve, para cada item do XML que foi vinculado, ' +
+      'a qual pedido (pedido_id + pedido_cotacao) ele pertence, além do resumo de conclusão. ' +
+      'Somente vínculos confirmados.',
+  })
+  @ApiParam({ name: 'chave', description: 'Chave de acesso da NF-e (44 dígitos)' })
+  async vinculacaoPorChave(@Param('chave') chave: string) {
+    return this.service.vinculacaoPorChave(chave);
+  }
+
   // GET /compras/vinculacao-nfe/:vinculoId
   @Get(':vinculoId')
   @ApiOperation({
