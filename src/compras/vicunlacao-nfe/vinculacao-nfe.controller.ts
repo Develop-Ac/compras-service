@@ -40,7 +40,11 @@ export class VinculacaoNfeController {
   async vincular(@Body() body: VincularNfeDto) {
     const pedido = Number(body?.pedido);
     const nfe = String(body?.nfe ?? '').trim();
-    return this.service.vincular(pedido, nfe);
+    const forCodigo =
+      body?.for_codigo != null && Number.isFinite(Number(body.for_codigo))
+        ? Number(body.for_codigo)
+        : null;
+    return this.service.vincular(pedido, nfe, forCodigo);
   }
 
   // POST /compras/vinculacao-nfe/salvar
@@ -232,6 +236,22 @@ export class VinculacaoNfeController {
   @ApiResponse({ status: 404, description: 'Vínculo não encontrado.' })
   async confirmar(@Param('vinculoId') vinculoId: string) {
     return this.service.confirmarVinculo(vinculoId);
+  }
+
+  // POST /compras/vinculacao-nfe/:vinculoId/rejeitar
+  @Post(':vinculoId/rejeitar')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Rejeita uma sugestão de vínculo (não sugere a mesma NF de novo)',
+    description:
+      'Marca a sugestão como rejeitada (mantém o registro p/ bloquear nova sugestão ' +
+      'da mesma NF neste pedido) e reverte o status do pedido ao anterior à sugestão.',
+  })
+  @ApiParam({ name: 'vinculoId', description: 'com_pedido_nfe_vinculo.id' })
+  @ApiResponse({ status: 200, description: 'Sugestão rejeitada e status revertido.' })
+  @ApiResponse({ status: 404, description: 'Vínculo não encontrado.' })
+  async rejeitar(@Param('vinculoId') vinculoId: string) {
+    return this.service.rejeitarVinculo(vinculoId);
   }
 
   // DELETE /compras/vinculacao-nfe/:vinculoId

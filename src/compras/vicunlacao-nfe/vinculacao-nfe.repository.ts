@@ -201,9 +201,14 @@ export class VinculacaoNfeRepository {
   }
 
   /** Retorna os ids dos pedidos (com_pedido) de uma cotação. */
-  async findPedidoIds(pedido: number): Promise<string[]> {
+  async findPedidoIds(pedido: number, forCodigo?: number | null): Promise<string[]> {
     const rows = await this.prisma.com_pedido.findMany({
-      where: { pedido_cotacao: pedido },
+      where: {
+        pedido_cotacao: pedido,
+        // Escopo ao fornecedor do pedido quando informado: uma mesma cotação tem
+        // um com_pedido por fornecedor; sem o filtro, somaríamos os itens de TODOS.
+        ...(forCodigo != null ? { for_codigo: forCodigo } : {}),
+      },
       select: { id: true },
     });
     return rows.map((r) => r.id);
@@ -439,6 +444,8 @@ export class VinculacaoNfeRepository {
           usuario: cabecalho.usuario ?? null,
           confirmado,
           origem_vinculo: origem,
+          // Re-vínculo (manual/auto) sobrepõe uma rejeição anterior desse par.
+          rejeitado: false,
         },
       });
 
@@ -511,7 +518,8 @@ export class VinculacaoNfeRepository {
 
   /**
    * Seta o status do pedido para 'Vínculo sugerido', SEM rebaixar
-   * 'Entregue' nem 'Cancelado'. Retorna o status final.
+   * 'Entregue' nem 'Cancelado'. Guarda o status anterior (status_anterior) p/
+   * permitir reverter ao rejeitar. Retorna o status final.
    */
   async marcarPedidoVinculoSugerido(pedidoId: string): Promise<string | null> {
     const pedido = await this.prisma.com_pedido.findUnique({
@@ -525,15 +533,41 @@ export class VinculacaoNfeRepository {
     }
     await this.prisma.com_pedido.update({
       where: { id: pedidoId },
-      data: { status: 'Vínculo sugerido' },
+      data: { status: 'Vínculo sugerido', status_anterior: atual },
     });
     return 'Vínculo sugerido';
   }
 
-  /** Lista os cabeçalhos (sem itens) de um pedido + contagem de itens por tipo. */
+  /** Marca uma sugestão como REJEITADA (mantém a linha p/ bloquear re-sugestão). */
+  async marcarVinculoRejeitado(vinculoId: string) {
+    return this.prisma.com_pedido_nfe_vinculo.update({
+      where: { id: vinculoId },
+      data: { rejeitado: true, confirmado: false },
+    });
+  }
+
+  /**
+   * Reverte o status do pedido para o status_anterior (e limpa status_anterior).
+   * Usado ao rejeitar a sugestão, para o pedido voltar a ser elegível.
+   */
+  async reverterStatusPedido(pedidoId: string): Promise<string | null> {
+    const pedido = await this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: { status_anterior: true },
+    });
+    const novo = pedido?.status_anterior ?? 'Aguardando analise';
+    await this.prisma.com_pedido.update({
+      where: { id: pedidoId },
+      data: { status: novo, status_anterior: null },
+    });
+    return novo;
+  }
+
+  /** Lista os cabeçalhos (sem itens) de um pedido + contagem de itens por tipo.
+   * Exclui sugestões rejeitadas (rejeitado=true), que não devem aparecer na tela. */
   async findVinculosByPedido(pedidoId: string) {
     const cabecalhos = await this.prisma.com_pedido_nfe_vinculo.findMany({
-      where: { pedido_id: pedidoId },
+      where: { pedido_id: pedidoId, rejeitado: false },
       select: {
         id: true,
         chave_nfe: true,

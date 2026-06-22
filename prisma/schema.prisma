@@ -166,6 +166,9 @@ model com_pedido {
   // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
   // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
   ipi_no_valor   Boolean            @default(false)
+  // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
+  // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
+  status_anterior String?           @db.VarChar(50)
   itens          com_pedido_itens[]
   nfe_vinculos   com_pedido_nfe_vinculo[]
 
@@ -213,6 +216,9 @@ model com_pedido_nfe_vinculo {
   valor_total     Decimal?   @db.Decimal(15, 2)
   usuario         String?    @db.VarChar(120)
   confirmado      Boolean    @default(true)
+  // Sugestão automática rejeitada pelo usuário: a linha é mantida (não apagada)
+  // para que o auto-vínculo NÃO sugira a mesma NF p/ este pedido de novo.
+  rejeitado       Boolean    @default(false)
   origem_vinculo  String     @default("manual") @db.VarChar(20)
   created_at      DateTime   @default(now())
   updated_at      DateTime   @updatedAt

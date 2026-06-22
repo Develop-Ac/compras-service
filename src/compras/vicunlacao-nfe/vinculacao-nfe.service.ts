@@ -90,7 +90,7 @@ export class VinculacaoNfeService {
    * Pipeline completo: busca XML da NF-e, busca itens da cotação e do pedido,
    * vincula e devolve as 3 listas (vinculados, XML sem vínculo, pedido sem vínculo).
    */
-  async vincular(pedido: number, nfe: string) {
+  async vincular(pedido: number, nfe: string, forCodigo?: number | null) {
     // 1) XML da NF-e — Postgres PRIMEIRO.
     // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
     // (íntegro). O OPENQUERY do Firebird, por outro lado, trunca XML_COMPLETO num
@@ -128,7 +128,7 @@ export class VinculacaoNfeService {
 
     // 3) Itens do pedido (com_pedido / com_pedido_itens) — mapa por pro_codigo
     //    (mantém o registro mais recente, já que vem ordenado por emissao DESC).
-    const pedidoIds = await this.repo.findPedidoIds(pedido);
+    const pedidoIds = await this.repo.findPedidoIds(pedido, forCodigo);
     const itensPedidoRows = await this.repo.findPedidoItens(pedidoIds);
     const pedidoPorCodigo = new Map<string, ItemPedido>();
     for (const r of itensPedidoRows) {
@@ -195,6 +195,14 @@ export class VinculacaoNfeService {
       if (match) {
         const codigo = match.item.pro_codigo;
         const ped = codigo == null ? undefined : pedidoPorCodigo.get(String(codigo));
+
+        // O produto casado precisa pertencer a ESTE pedido. Casamentos contra a
+        // cotação (que tem itens de vários fornecedores) cujo produto não está no
+        // pedido vão para "XML sem vínculo", não contam como vinculados.
+        if (!ped) {
+          xmlSemVinculo.push(item);
+          continue;
+        }
 
         // Saldo deste item: restante da NF (total − consumido) e do pedido.
         const cprodNorm = this.normRef(item.cProd);
@@ -908,6 +916,26 @@ export class VinculacaoNfeService {
     await this.repo.setVinculoConfirmado(vinculoId, true);
     const status = await this.recalcularStatusPedido(v.pedido_id);
     return { id: vinculoId, confirmado: true, status };
+  }
+
+  /**
+   * Rejeita uma sugestão de vínculo: marca como rejeitado (NÃO apaga, para que o
+   * auto-vínculo não sugira a mesma NF p/ este pedido de novo) e reverte o status
+   * do pedido (volta ao status anterior à sugestão, ficando elegível p/ outras NFs).
+   */
+  async rejeitarVinculo(vinculoId: string) {
+    const v = await this.repo.findVinculoById(vinculoId);
+    if (!v) {
+      throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
+    }
+    await this.repo.marcarVinculoRejeitado(vinculoId);
+    // Recalcula pelo lado confirmado; se continuar 'Vínculo sugerido' (sem
+    // confirmados), reverte ao status anterior à sugestão.
+    let status = await this.recalcularStatusPedido(v.pedido_id);
+    if (status === 'Vínculo sugerido') {
+      status = await this.repo.reverterStatusPedido(v.pedido_id);
+    }
+    return { id: vinculoId, rejeitado: true, status };
   }
 
   /**

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsString, Length } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsInt, IsOptional, IsString, Length } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -21,4 +21,15 @@ export class VincularNfeDto {
   @IsString()
   @Length(44, 44)
   nfe!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Código do fornecedor do pedido (for_codigo). Escopa o match ao pedido desse ' +
+      'fornecedor; sem ele, considera os itens de TODOS os pedidos da cotação.',
+    example: 317,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  for_codigo?: number;
 }

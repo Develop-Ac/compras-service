@@ -10,6 +10,14 @@ import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.ser
 const COBERTURA_MINIMA = 0.3;
 const EMPRESA = 1;
 
+/**
+ * Diferença MÁXIMA (em dias) entre a data do pedido e a data de emissão da NF
+ * para considerar a NF candidata ao auto-vínculo. Configurável por AUTOVINCULO_MAX_DIAS.
+ */
+const MAX_DIAS_DIFERENCA =
+  Number(process.env.AUTOVINCULO_MAX_DIAS) > 0 ? Number(process.env.AUTOVINCULO_MAX_DIAS) : 60;
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
 /** Linha de NF-e disponível (campos vindos do OPENQUERY de fetchNfeDisponiveis). */
 interface NfeDisponivel {
   CHAVE_NFE: string;
@@ -149,7 +157,10 @@ export class AutoVinculoService {
     // Candidatas: emitente é do grupo (qualquer CNPJ do grupo) OU nome similar E data de emissão > pedido.
     let candidatas = notas.filter((n) => {
       const dataEmissao = this.toDate(n.DATA_EMISSAO);
+      // NF deve ser emitida DEPOIS do pedido e dentro de MAX_DIAS_DIFERENCA dias dele.
       if (!dataEmissao || dataEmissao <= pedido.created_at) return false;
+      const diffDias = (dataEmissao.getTime() - pedido.created_at.getTime()) / MS_POR_DIA;
+      if (diffDias > MAX_DIAS_DIFERENCA) return false;
 
       const cnpjNf = this.soDigitos(n.CPF_CNPJ_EMITENTE);
       const cnpjBate = !!cnpjNf && cnpjsGrupo.has(cnpjNf);
@@ -178,7 +189,7 @@ export class AutoVinculoService {
 
       let resultado: Awaited<ReturnType<VinculacaoNfeService['vincular']>>;
       try {
-        resultado = await this.vinculacao.vincular(pedido.pedido_cotacao, chave);
+        resultado = await this.vinculacao.vincular(pedido.pedido_cotacao, chave, pedido.for_codigo);
       } catch (err: any) {
         this.logger.warn(
           `Casamento falhou p/ pedido ${pedido.id} x chave ${chave}: ${err?.message || err}`,
