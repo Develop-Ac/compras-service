@@ -466,13 +466,16 @@ export class VinculacaoNfeRepository {
 
   /**
    * Pedidos "abertos" candidatos à varredura de auto-vínculo:
-   * status em ('Em analise', 'Faturado parcialmente') e SEM vínculo confirmado.
-   * (Cancelado / Entregue / 'Vínculo sugerido' ficam de fora pelo filtro de status.)
+   * status em ('Aguardando analise', 'Finalizado', 'Faturado parcialmente') e
+   * SEM vínculo confirmado. 'Cancelado', 'Entregue', 'Faturado' e
+   * 'Vínculo sugerido' ficam de fora pelo filtro de status.
    */
   async findPedidosAbertosParaAutoVinculo(limite: number) {
     return this.prisma.com_pedido.findMany({
       where: {
-        status: { in: ['Em analise', 'Faturado parcialmente'] },
+        status: {
+          in: ['Aguardando analise', 'Finalizado', 'Faturado parcialmente'],
+        },
         nfe_vinculos: { none: { confirmado: true } },
       },
       select: {
