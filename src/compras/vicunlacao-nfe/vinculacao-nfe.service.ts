@@ -73,6 +73,10 @@ export interface ItemPedido {
 const COLUNAS_COTACAO = ['referencia', 'ref_fabricante', 'ref_fornecedor'] as const;
 type ColunaCotacao = (typeof COLUNAS_COTACAO)[number];
 
+// Conferência Pedido × Faturado: diferença de valor mínima (em R$) para um item
+// ser considerado DIVERGENTE. Diferenças menores são ignoradas (centavos/IPI/etc.).
+const TOLERANCIA_VALOR_DIVERGENTE = 1;
+
 @Injectable()
 export class VinculacaoNfeService {
   private readonly logger = new Logger(VinculacaoNfeService.name);
@@ -673,8 +677,10 @@ export class VinculacaoNfeService {
         if (statusProduto.length === 0) statusProduto.push('Não faturado');
       }
 
-      // Divergência de valor (com tolerância p/ ponto flutuante / centavos).
-      const valorDiverge = Math.abs(valorFaturado - valorPedido) > 0.005;
+      // Divergência de valor: só conta como divergência quando a diferença é de
+      // R$ 1,00 ou mais. Diferenças menores (centavos/arredondamento) são ignoradas.
+      const valorDiverge =
+        Math.abs(valorFaturado - valorPedido) >= TOLERANCIA_VALOR_DIVERGENTE;
 
       let situacao: 'completo' | 'parcial' | 'nao_faturado' | 'divergente';
       if (quantidadeFaturada === 0) {
@@ -1467,6 +1473,10 @@ export class VinculacaoNfeService {
     DIANT: 'DIANTEIRA', DIANTEIRO: 'DIANTEIRA', DIANTEIRA: 'DIANTEIRA',
     RETR: 'RETROVISOR', RETROVISOR: 'RETROVISOR',
     CROM: 'CROMADO', CROMADO: 'CROMADO',
+    // 'PB' (abreviação do fornecedor) = parabrisa. P/BRISA, PARA-BRISA, PARA-BRISAS
+    // e PARABRISAS já viram PARABRISA na ABREV; aqui canonizamos o token 'PB' para
+    // o mesmo valor, casando por TOKEN (não corrompe códigos como 'ABPB12').
+    PB: 'PARABRISA', PARABRISA: 'PARABRISA',
     // Para-lama / para-barro / protetor de lama = mesmo produto (canônico PARALAMA).
     // 'P/LAMA' e 'P/BARRO' viram 'PARA LAMA'/'PARA BARRO' (PARA é stopword) -> LAMA/BARRO.
     PARALAMA: 'PARALAMA', PARALAMAS: 'PARALAMA', PARABARRO: 'PARALAMA', PARABARROS: 'PARALAMA',
