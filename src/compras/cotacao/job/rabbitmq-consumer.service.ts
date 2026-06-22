@@ -22,8 +22,11 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly comCotacaoService: CotacaoRepository, // injetado pelo CotacaoModule
   ) {}
 
-  async onModuleInit() {
-    await this.connectAndConsume();
+  onModuleInit() {
+    // Conecta em BACKGROUND: não bloqueia o boot do serviço. Se o RabbitMQ estiver
+    // indisponível, o connectAndConsume re-tenta sozinho a cada 5s — sem travar o
+    // startup (antes, o boot ficava preso até o TCP estourar o timeout da conexão).
+    void this.connectAndConsume();
   }
 
   async onModuleDestroy() {
@@ -33,7 +36,8 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
   private async connectAndConsume() {
     try {
       this.logger.log('Conectando ao RabbitMQ...');
-      this.connection = await amqp.connect(this.RABBITMQ_URL);
+      // timeout p/ a tentativa falhar rápido quando o broker está inacessível.
+      this.connection = await amqp.connect(this.RABBITMQ_URL, { timeout: 8000 });
       this.channel = await this.connection.createChannel();
 
       for (const queue of this.QUEUES) {
