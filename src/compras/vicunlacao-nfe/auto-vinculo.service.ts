@@ -146,12 +146,20 @@ export class AutoVinculoService {
       throw new NotFoundException(`Pedido ${pedidoId} não encontrado.`);
     }
 
+    // Fonte de NF-e SOB DEMANDA: a conciliação (Postgres), por janela de data de
+    // emissão a partir do pedido. Inclui NF JÁ LANÇADA no ERP — diferente do cron,
+    // que só enxerga NF não importada. Assim o botão reconcilia também pedidos
+    // cujas notas já entraram (caso comum ao validar manualmente).
+    const dataMax = new Date(pedido.created_at.getTime() + MAX_DIAS_DIFERENCA * MS_POR_DIA);
     let notas: NfeDisponivel[] = [];
     try {
-      notas = (await this.notasRepo.fetchNfeDisponiveis()) as unknown as NfeDisponivel[];
+      notas = (await this.repo.findConciliacaoCandidatas(
+        pedido.created_at,
+        dataMax,
+      )) as unknown as NfeDisponivel[];
     } catch (err: any) {
       this.logger.error(
-        `Não foi possível listar NF-e disponíveis (pedido ${pedidoId}): ${err?.message || err}`,
+        `Não foi possível listar NF-e candidatas (pedido ${pedidoId}): ${err?.message || err}`,
       );
       throw err;
     }

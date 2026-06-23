@@ -881,6 +881,31 @@ export class VinculacaoNfeRepository {
     return rows.map((r) => r.chave_nfe);
   }
 
+  /**
+   * NF-e candidatas para a sugestão SOB DEMANDA de um pedido: lê a conciliação
+   * (com_nfe_conciliacao) por janela de data de emissão, incluindo as JÁ LANÇADAS
+   * (status LANCADA) — ao contrário do cron, que só vê NF ainda não importada.
+   * Exclui EXCLUIDA. O CNPJ do emitente é derivado da própria chave (posições
+   * 7..20). Devolve no shape esperado pelo motor de casamento.
+   */
+  async findConciliacaoCandidatas(dataMin: Date, dataMax: Date) {
+    const rows = await this.prisma.com_nfe_conciliacao.findMany({
+      where: {
+        data_emissao: { gte: dataMin, lte: dataMax },
+        status_erp: { not: 'EXCLUIDA' },
+      },
+      select: { chave_nfe: true, emitente: true, data_emissao: true },
+    });
+    return rows.map((r) => ({
+      CHAVE_NFE: r.chave_nfe,
+      // CNPJ do emitente embutido na chave da NF-e (14 dígitos após cUF+AAMM).
+      CPF_CNPJ_EMITENTE:
+        r.chave_nfe && r.chave_nfe.length >= 20 ? r.chave_nfe.substring(6, 20) : null,
+      NOME_EMITENTE: r.emitente ?? null,
+      DATA_EMISSAO: r.data_emissao,
+    }));
+  }
+
   /** Conciliação (status_erp + dt_entrada + valor_total) das chaves informadas, do Postgres. */
   async findConciliacaoByChaves(chaves: string[]) {
     if (!chaves.length) return [];
