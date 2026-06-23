@@ -194,20 +194,22 @@ export class AutoVinculoService {
     const totalItens = await this.repo.countProCodigosDoPedido(pedido.id);
     if (totalItens === 0) return 0;
 
-    // Fornecedor do pedido (CNPJ + nome) via OpenQuery.
+    // CNPJ do fornecedor do pedido (via OpenQuery).
     const fornecedor = await this.fornecedorRepo.findFornecedorByCodigo(
       EMPRESA,
       pedido.for_codigo,
     );
     const cnpjForn = this.soDigitos(fornecedor?.cpf_cnpj ?? null);
-    const nomeForn = fornecedor?.for_nome ?? null;
 
     // CNPJs do GRUPO do fornecedor (matriz/filiais relacionadas). Inclui o próprio.
     // Permite vincular NF emitida por um relacionado (ex.: pedido p/ CNPJ X, NF do CNPJ Y do mesmo grupo).
     const cnpjsGrupo = new Set<string>(await this.grupo.cnpjsDoGrupo(pedido.for_codigo));
     if (cnpjForn) cnpjsGrupo.add(cnpjForn);
 
-    // Candidatas: emitente é do grupo (qualquer CNPJ do grupo) OU nome similar E data de emissão > pedido.
+    // Candidatas: emitente tem CNPJ do fornecedor OU de um relacionado do grupo,
+    // E data de emissão posterior ao pedido (dentro de MAX_DIAS_DIFERENCA dias).
+    // O casamento por NOME foi removido de propósito: gerava muitos falsos
+    // positivos (razões sociais genéricas), deixando o vínculo lento e impreciso.
     let candidatas = notas.filter((n) => {
       const dataEmissao = this.toDate(n.DATA_EMISSAO);
       // NF deve ser emitida DEPOIS do pedido e dentro de MAX_DIAS_DIFERENCA dias dele.
@@ -216,9 +218,7 @@ export class AutoVinculoService {
       if (diffDias > MAX_DIAS_DIFERENCA) return false;
 
       const cnpjNf = this.soDigitos(n.CPF_CNPJ_EMITENTE);
-      const cnpjBate = !!cnpjNf && cnpjsGrupo.has(cnpjNf);
-      const nomeBate = this.nomeSimilar(nomeForn, n.NOME_EMITENTE);
-      return cnpjBate || nomeBate;
+      return !!cnpjNf && cnpjsGrupo.has(cnpjNf);
     });
 
     // Não sugere NF sem saldo (totalmente consumida por vínculos confirmados).
@@ -233,6 +233,13 @@ export class AutoVinculoService {
 
     let criadas = 0;
 
+    // Itens da cotação são os MESMOS para todas as NF-e candidatas deste pedido:
+    // busca uma única vez (Firebird + Postgres + enriquecimento) e reusa em cada
+    // vincular(), em vez de refazer por NF.
+    let itensCotacaoPedido:
+      | Awaited<ReturnType<VinculacaoNfeService['carregarItensCotacao']>>
+      | undefined;
+
     for (const nf of candidatas) {
       const chave = String(nf.CHAVE_NFE ?? '').trim();
       if (!chave) continue;
@@ -245,7 +252,15 @@ export class AutoVinculoService {
 
       let resultado: Awaited<ReturnType<VinculacaoNfeService['vincular']>>;
       try {
-        resultado = await this.vinculacao.vincular(pedido.pedido_cotacao, chave, pedido.for_codigo);
+        if (!itensCotacaoPedido) {
+          itensCotacaoPedido = await this.vinculacao.carregarItensCotacao(pedido.pedido_cotacao);
+        }
+        resultado = await this.vinculacao.vincular(
+          pedido.pedido_cotacao,
+          chave,
+          pedido.for_codigo,
+          { itensCotacao: itensCotacaoPedido },
+        );
       } catch (err: any) {
         this.logger.warn(
           `Casamento falhou p/ pedido ${pedido.id} x chave ${chave}: ${err?.message || err}`,
@@ -312,51 +327,4 @@ export class AutoVinculoService {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  /**
-   * Normaliza um nome de empresa: maiúsculas, sem acento, sem sufixos
-   * societários (LTDA/ME/EPP/SA/EIRELI/MEI) e sem pontuação.
-   */
-  private normalizarNome(s: string | null): string {
-    if (!s) return '';
-    let t = String(s)
-      .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '')
-      .toUpperCase();
-    t = t.replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-    const sufixos = new Set([
-      'LTDA',
-      'ME',
-      'EPP',
-      'SA',
-      'S',
-      'A',
-      'EIRELI',
-      'MEI',
-      'CIA',
-      'COMPANHIA',
-    ]);
-    return t
-      .split(' ')
-      .filter((tk) => tk && !sufixos.has(tk))
-      .join(' ')
-      .trim();
-  }
-
-  /**
-   * Nomes "similares": após normalização, um contém o outro OU a interseção de
-   * tokens é >= 3.
-   */
-  private nomeSimilar(a: string | null, b: string | null): boolean {
-    const na = this.normalizarNome(a);
-    const nb = this.normalizarNome(b);
-    if (!na || !nb) return false;
-    if (na === nb) return true;
-    if (na.includes(nb) || nb.includes(na)) return true;
-
-    const ta = new Set(na.split(' ').filter(Boolean));
-    const tb = new Set(nb.split(' ').filter(Boolean));
-    let inter = 0;
-    for (const tk of ta) if (tb.has(tk)) inter++;
-    return inter >= 3;
-  }
 }

@@ -893,6 +893,12 @@ model com_produto_fornecedor_referencia {
   descricao  String    @db.VarChar(255)
   data       DateTime? @default(now()) @db.Timestamp(6)
   codigo     String?   @db.VarChar(255)
+
+  // Suporta o catalogoRefs (enriquecimento de referências): filtro por
+  // (fornecedor, codigo) + DISTINCT ON (fornecedor, codigo) ORDER BY data DESC.
+  // Sem ele, a query faz full scan + sort de ~154k linhas (~2s por vínculo).
+  // Índice aplicado manualmente no banco (ver SQL entregue).
+  @@index([fornecedor, codigo, data], map: "idx_cpfr_forn_cod_data")
 }
 
 model com_fornecedores {

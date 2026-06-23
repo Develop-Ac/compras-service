@@ -116,10 +116,30 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Carrega e unifica os itens da cotação (Firebird PEDIDOS_COTACOES + Postgres
+   * com_cotacao_itens_for), já com as referências de fornecedor enriquecidas pelo
+   * grupo. Exposto para que o auto-vínculo/botão "Sugerir" busque UMA vez e reuse
+   * em todas as NF-e candidatas do mesmo pedido (ver opts.itensCotacao de vincular).
+   */
+  async carregarItensCotacao(pedido: number): Promise<ItemCotacao[]> {
+    const [itensFb, itensPg] = await Promise.all([
+      this.repo.findCotacaoItens(pedido),
+      this.repo.findCotacaoItensFor(pedido),
+    ]);
+    await this.grupo.enriquecerRefsEmBranco(itensPg as any);
+    return this.unificarItensCotacao(itensFb, itensPg);
+  }
+
+  /**
    * Pipeline completo: busca XML da NF-e, busca itens da cotação e do pedido,
    * vincula e devolve as 3 listas (vinculados, XML sem vínculo, pedido sem vínculo).
    */
-  async vincular(pedido: number, nfe: string, forCodigo?: number | null) {
+  async vincular(
+    pedido: number,
+    nfe: string,
+    forCodigo?: number | null,
+    opts?: { itensCotacao?: ItemCotacao[] },
+  ) {
     // 1) XML da NF-e — Postgres PRIMEIRO.
     // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
     // (íntegro). O OPENQUERY do Firebird, por outro lado, trunca XML_COMPLETO num
@@ -145,15 +165,11 @@ export class VinculacaoNfeService {
       throw new NotFoundException(`Nenhuma NF-e encontrada para a chave ${nfe}.`);
     }
 
-    // 2) Itens da cotação (Firebird) + com_cotacao_itens_for (Postgres)
-    const [itensFb, itensPg] = await Promise.all([
-      this.repo.findCotacaoItens(pedido),
-      this.repo.findCotacaoItensFor(pedido),
-    ]);
-    // Preenche ref_fornecedor em branco usando a referência do grupo (matriz/filiais),
-    // para que a NF-e de um relacionado case mesmo sem a referência gravada nesta cotação.
-    await this.grupo.enriquecerRefsEmBranco(itensPg as any);
-    const itensCotacao = this.unificarItensCotacao(itensFb, itensPg);
+    // 2) Itens da cotação (Firebird + com_cotacao_itens_for). Podem ser injetados
+    //    já prontos (opts.itensCotacao) quando o chamador processa VÁRIAS NF-e do
+    //    mesmo pedido (auto-vínculo / botão "Sugerir"), evitando refazer a busca e
+    //    o enriquecimento de referências a cada NF.
+    const itensCotacao = opts?.itensCotacao ?? (await this.carregarItensCotacao(pedido));
 
     // 3) Itens do pedido (com_pedido / com_pedido_itens) — mapa por pro_codigo
     //    (mantém o registro mais recente, já que vem ordenado por emissao DESC).
