@@ -156,6 +156,25 @@ export class VinculacaoNfeController {
     return this.autoVinculo.executarVarredura();
   }
 
+  // POST /compras/vinculacao-nfe/auto/pedido/:pedidoId
+  // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('auto/pedido/:pedidoId')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Sugere vínculos de NF-e para UM pedido (sob demanda)',
+    description:
+      'Roda o mesmo motor do auto-vínculo (fornecedor/grupo + janela de data + ' +
+      'saldo + cobertura mínima), porém filtrado a este pedido: busca as NF-e ' +
+      'disponíveis que casam e grava sugestões (confirmado=false) para validação ' +
+      'manual. Retorna { sugestoes_criadas, sugestoes_pendentes }.',
+  })
+  @ApiParam({ name: 'pedidoId', description: 'com_pedido.id' })
+  @ApiResponse({ status: 200, description: 'Sugestões geradas.' })
+  @ApiResponse({ status: 404, description: 'Pedido não encontrado.' })
+  async sugerirParaPedido(@Param('pedidoId') pedidoId: string) {
+    return this.autoVinculo.sugerirParaPedido(pedidoId);
+  }
+
   // POST /compras/vinculacao-nfe/pedido/:pedidoId/ipi-no-valor  (body: { ipi_no_valor })
   // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
   @Post('pedido/:pedidoId/ipi-no-valor')

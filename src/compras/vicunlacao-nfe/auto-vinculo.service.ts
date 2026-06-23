@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { VinculacaoNfeService } from './vinculacao-nfe.service';
 import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
@@ -123,6 +123,48 @@ export class AutoVinculoService {
       sugestoes_criadas: sugestoesCriadas,
       truncado,
       limite,
+    };
+  }
+
+  /**
+   * Sugestão sob demanda para UM pedido (botão "Sugerir vínculo de NF" na tela do
+   * pedido). Usa exatamente o mesmo motor da varredura automática
+   * (`processarPedido`: mesmos critérios de fornecedor/grupo, janela de data,
+   * saldo e cobertura mínima), porém filtrado a este pedido. Retorna o nº de
+   * sugestões NOVAS criadas e o total de sugestões pendentes do pedido.
+   */
+  async sugerirParaPedido(pedidoId: string): Promise<{
+    pedido_id: string;
+    sugestoes_criadas: number;
+    sugestoes_pendentes: number;
+  }> {
+    const pedido = await this.repo.findPedidoParaAutoVinculo(pedidoId);
+    if (!pedido) {
+      throw new NotFoundException(`Pedido ${pedidoId} não encontrado.`);
+    }
+
+    let notas: NfeDisponivel[] = [];
+    try {
+      notas = (await this.notasRepo.fetchNfeDisponiveis()) as unknown as NfeDisponivel[];
+    } catch (err: any) {
+      this.logger.error(
+        `Não foi possível listar NF-e disponíveis (pedido ${pedidoId}): ${err?.message || err}`,
+      );
+      throw err;
+    }
+
+    const sugestoesCriadas = await this.processarPedido(pedido, notas);
+    const sugestoesPendentes = await this.repo.countSugestoesPendentesDoPedido(pedidoId);
+
+    this.logger.log(
+      `Sugestão sob demanda: pedido ${pedidoId} (cotação ${pedido.pedido_cotacao}) — ` +
+        `${sugestoesCriadas} nova(s), ${sugestoesPendentes} pendente(s).`,
+    );
+
+    return {
+      pedido_id: pedidoId,
+      sugestoes_criadas: sugestoesCriadas,
+      sugestoes_pendentes: sugestoesPendentes,
     };
   }
 

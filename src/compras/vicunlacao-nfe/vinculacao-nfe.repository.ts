@@ -504,6 +504,35 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  /**
+   * Carrega um único pedido com os campos que o motor de auto-vínculo precisa
+   * (para a sugestão sob demanda, disparada pelo botão na tela do pedido).
+   */
+  async findPedidoParaAutoVinculo(pedidoId: string) {
+    return this.prisma.com_pedido.findUnique({
+      where: { id: pedidoId },
+      select: {
+        id: true,
+        pedido_cotacao: true,
+        for_codigo: true,
+        status: true,
+        created_at: true,
+      },
+    });
+  }
+
+  /** Conta sugestões de auto-vínculo PENDENTES (não confirmadas e não rejeitadas) do pedido. */
+  async countSugestoesPendentesDoPedido(pedidoId: string): Promise<number> {
+    return this.prisma.com_pedido_nfe_vinculo.count({
+      where: {
+        pedido_id: pedidoId,
+        origem_vinculo: 'auto',
+        confirmado: false,
+        rejeitado: false,
+      },
+    });
+  }
+
   /** Conta quantos itens (com_pedido_itens) distintos por pro_codigo o pedido tem. */
   async countProCodigosDoPedido(pedidoId: string): Promise<number> {
     const rows = await this.prisma.com_pedido_itens.findMany({
