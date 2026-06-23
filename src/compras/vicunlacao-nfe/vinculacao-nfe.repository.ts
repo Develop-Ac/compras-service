@@ -137,8 +137,12 @@ export class VinculacaoNfeRepository {
 
   /**
    * Busca itens de um pedido de cotação no Firebird.
+   *
+   * A cotação/pedido é GERENCIAL (empresa 3) — diferente da NF-e, que é fiscal
+   * (empresa 1). O cadastro é compartilhado entre as empresas, mas os itens da
+   * cotação só existem sob a empresa gerencial; por isso o default é 3.
    */
-  async findCotacaoItens(pedido: number, empresa = 1): Promise<CotacaoItemRow[]> {
+  async findCotacaoItens(pedido: number, empresa = 3): Promise<CotacaoItemRow[]> {
     const fbSql = `
       SELECT
           orc.pedido_cotacao,

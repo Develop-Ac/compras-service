@@ -8,7 +8,10 @@ import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.ser
 
 /** Cobertura mínima (pro_codigos distintos vinculados / nº itens do pedido) p/ sugerir. */
 const COBERTURA_MINIMA = 0.3;
-const EMPRESA = 1;
+// Empresa GERENCIAL (pedido/cotação/fornecedor). O cadastro de fornecedor é o
+// mesmo nas empresas (1=fiscal, 3=gerencial) e os códigos são iguais; usamos a
+// gerencial (3), igual ao resto do sistema. A NF-e, fiscal, segue na empresa 1.
+const EMPRESA = 3;
 
 /**
  * Diferença MÁXIMA (em dias) entre a data do pedido e a data de emissão da NF

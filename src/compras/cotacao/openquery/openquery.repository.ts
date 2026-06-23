@@ -109,8 +109,31 @@ export class ConsultaOpenqueryRepository {
     const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
 
     try {
-      const rows = await this.mssql.query<FornecedorRow>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
-      return rows[0] || null;
+      const rows = await this.mssql.query<Record<string, any>>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
+      const row = rows[0];
+      if (!row) return null;
+      // O OPENQUERY/Firebird devolve os nomes de coluna em MAIÚSCULAS
+      // (FOR_NOME, CPF_CNPJ, ...), mas o tipo/consumidores usam minúsculas.
+      // Normaliza para o shape declarado (com fallback p/ minúsculas, caso o
+      // driver já devolva assim em algum ambiente).
+      const pick = (...keys: string[]) => {
+        for (const k of keys) if (row[k] != null) return row[k];
+        return null;
+      };
+      return {
+        for_codigo: pick('FOR_CODIGO', 'for_codigo'),
+        for_nome: pick('FOR_NOME', 'for_nome'),
+        cpf_cnpj: pick('CPF_CNPJ', 'cpf_cnpj'),
+        rg_ie: pick('RG_IE', 'rg_ie'),
+        endereco: pick('ENDERECO', 'endereco'),
+        bairro: pick('BAIRRO', 'bairro'),
+        numero: pick('NUMERO', 'numero'),
+        cidade: pick('CIDADE', 'cidade'),
+        uf: pick('UF', 'uf'),
+        email: pick('EMAIL', 'email'),
+        fone: pick('FONE', 'fone'),
+        contato: pick('CONTATO', 'contato'),
+      };
     } catch (err: any) {
       this.logger.error(`[OPENQUERY fornecedor] ${err?.message || err}`);
       throw err;
