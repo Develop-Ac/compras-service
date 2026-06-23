@@ -1278,12 +1278,12 @@ export class VinculacaoNfeService {
     await this.repo.deleteVinculo(vinculoId);
 
     // Se não restou nenhum vínculo confirmado, o pedido volta ao estado
-    // pré-vinculação: 'Finalizado' (mesmo que estivesse 'Entregue'/'Faturado').
+    // pré-vinculação: 'Liberado' (mesmo que estivesse 'Entregue'/'Faturado').
     // Restando outros vínculos, recalcula normalmente (Faturado/parcial/Entregue).
     const restantes = await this.repo.findChavesVinculadasConfirmadas(pedidoId);
     const status = restantes.length
       ? await this.recalcularStatusPedido(pedidoId)
-      : await this.repo.reverterPedidoParaFinalizado(pedidoId);
+      : await this.repo.reverterPedidoParaLiberado(pedidoId);
 
     return { id: vinculoId, removido: true, status };
   }

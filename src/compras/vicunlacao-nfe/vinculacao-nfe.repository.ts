@@ -473,7 +473,7 @@ export class VinculacaoNfeRepository {
 
   /**
    * Pedidos "abertos" candidatos à varredura de auto-vínculo:
-   * status em ('Aguardando analise', 'Finalizado', 'Faturado parcialmente') e
+   * status em ('Aguardando analise', 'Liberado', 'Faturado parcialmente') e
    * SEM vínculo confirmado. 'Cancelado', 'Entregue', 'Faturado' e
    * 'Vínculo sugerido' ficam de fora pelo filtro de status.
    */
@@ -481,7 +481,7 @@ export class VinculacaoNfeRepository {
     return this.prisma.com_pedido.findMany({
       where: {
         status: {
-          in: ['Aguardando analise', 'Finalizado', 'Faturado parcialmente'],
+          in: ['Aguardando analise', 'Liberado', 'Faturado parcialmente'],
         },
         nfe_vinculos: { none: { confirmado: true } },
       },
@@ -948,10 +948,10 @@ export class VinculacaoNfeRepository {
   }
 
   /**
-   * Volta o pedido ao estado pré-vinculação ('Finalizado'), limpando a
+   * Volta o pedido ao estado pré-vinculação ('Liberado'), limpando a
    * data_recebimento. Não altera pedidos 'Cancelado'. Retorna o status final.
    */
-  async reverterPedidoParaFinalizado(pedidoId: string): Promise<string | null> {
+  async reverterPedidoParaLiberado(pedidoId: string): Promise<string | null> {
     const pedido = await this.prisma.com_pedido.findUnique({
       where: { id: pedidoId },
       select: { status: true },
@@ -960,9 +960,9 @@ export class VinculacaoNfeRepository {
     if (pedido.status === 'Cancelado') return pedido.status;
     await this.prisma.com_pedido.update({
       where: { id: pedidoId },
-      data: { status: 'Finalizado', data_recebimento: null },
+      data: { status: 'Liberado', data_recebimento: null },
     });
-    return 'Finalizado';
+    return 'Liberado';
   }
 
   // ----------------------- NF lançada -> Entregue ----------------------------
