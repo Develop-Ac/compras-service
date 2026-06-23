@@ -837,11 +837,21 @@ export class VinculacaoNfeService {
 
   /**
    * Recalcula o status do pedido a partir da cobertura dos seus itens
-   * (com_pedido_itens) por itens tipo='vinculado' de vínculos confirmados.
+   * (com_pedido_itens) por itens tipo='vinculado' de vínculos confirmados,
+   * cruzando com o status no ERP de cada NF (LANCADA = entregue).
    *
-   * - Todos os pro_codigo do pedido contemplados  -> 'Faturado'
-   * - Parte contemplada                            -> 'Faturado parcialmente'
-   * - Nenhum                                       -> mantém o status atual
+   * Por pro_codigo do pedido:
+   *  - "faturado" = coberto por ≥1 vínculo confirmado;
+   *  - "entregue" = coberto e TODAS as NFs que o cobrem estão LANCADA no ERP.
+   *
+   * Status resultante:
+   *  - Todos os itens entregues               -> 'Entregue' (grava data_recebimento)
+   *  - Algum item entregue, mas não todos      -> 'Entregue parcialmente'
+   *    (inclui: nem todos os itens vinculados; ou itens vinculados em NFs lançadas
+   *     e não lançadas — entrega parcial)
+   *  - Nenhuma NF lançada, todos os itens cobertos   -> 'Faturado'
+   *  - Nenhuma NF lançada, só parte coberta          -> 'Faturado parcialmente'
+   *  - Nenhum item coberto                           -> mantém o status atual
    *
    * Nunca rebaixa 'Entregue' nem mexe em 'Cancelado'. Retorna o status final.
    */
@@ -861,40 +871,65 @@ export class VinculacaoNfeService {
     // Sem itens no pedido: nada a calcular, mantém o status atual.
     if (!proCodigosPedido.length) return statusAtual;
 
-    const vinculados = await this.repo.findProCodigosVinculadosConfirmados(pedidoId);
-    const setVinculados = new Set(vinculados.map((c) => Number(c)));
-
     const codigosPedido = new Set(proCodigosPedido.map((c) => Number(c)));
-    let cobertos = 0;
-    for (const c of codigosPedido) {
-      if (setVinculados.has(c)) cobertos++;
+
+    // Mapa pro_codigo -> chaves de NF que o cobrem (vínculos confirmados, tipo='vinculado').
+    const itensVinc = await this.repo.findItensVinculadosConfirmados(pedidoId);
+    const codigoParaChaves = new Map<number, Set<string>>();
+    for (const it of itensVinc) {
+      if (it.tipo !== 'vinculado' || it.pro_codigo == null) continue;
+      const cod = Number(it.pro_codigo);
+      if (!codigosPedido.has(cod)) continue; // ignora o que não é deste pedido
+      const chave = it.vinculo?.chave_nfe;
+      if (!chave) continue;
+      if (!codigoParaChaves.has(cod)) codigoParaChaves.set(cod, new Set());
+      codigoParaChaves.get(cod)!.add(chave);
+    }
+
+    // Nenhum item contemplado: não mexe no status atual.
+    if (codigoParaChaves.size === 0) return statusAtual;
+
+    // Status no ERP de cada chave envolvida (LANCADA = entregue).
+    const chaves = [
+      ...new Set([...codigoParaChaves.values()].flatMap((s) => [...s])),
+    ];
+    const concs = await this.repo.findConciliacaoByChaves(chaves);
+    const porChave = new Map(concs.map((c) => [c.chave_nfe, c]));
+    const lancada = (chave: string) => porChave.get(chave)?.status_erp === 'LANCADA';
+
+    let todosEntregues = true; // todo item coberto e 100% das suas NFs lançadas
+    let algumEntregue = false; // existe item com ao menos uma NF lançada
+    let todosFaturados = true; // todo item coberto (lançado ou não)
+    for (const cod of codigosPedido) {
+      const chavesDoCod = codigoParaChaves.get(cod);
+      if (!chavesDoCod || chavesDoCod.size === 0) {
+        // Item sem nenhuma NF: não é faturado nem entregue.
+        todosFaturados = false;
+        todosEntregues = false;
+        continue;
+      }
+      const arr = [...chavesDoCod];
+      if (!arr.every(lancada)) todosEntregues = false;
+      if (arr.some(lancada)) algumEntregue = true;
     }
 
     let novoStatus = statusAtual;
-    if (cobertos === 0) {
-      // Nenhum item contemplado: não mexe no status atual.
-      novoStatus = statusAtual;
-    } else if (cobertos >= codigosPedido.size) {
-      // 100% coberto. Se TODAS as notas vinculadas confirmadas já estão lançadas
-      // no ERP -> 'Entregue' (data_recebimento = maior dt_entrada). Senão -> 'Faturado'.
-      const chaves = await this.repo.findChavesVinculadasConfirmadas(pedidoId);
-      const concs = await this.repo.findConciliacaoByChaves(chaves);
-      const porChave = new Map(concs.map((c) => [c.chave_nfe, c]));
-      const todasLancadas =
-        chaves.length > 0 &&
-        chaves.every((c) => porChave.get(c)?.status_erp === 'LANCADA');
-
-      if (todasLancadas) {
-        const datas = chaves
-          .map((c) => porChave.get(c)?.dt_entrada)
-          .filter((d): d is Date => d instanceof Date);
-        const dataRecebimento = datas.length
-          ? new Date(Math.max(...datas.map((d) => d.getTime())))
-          : new Date();
-        await this.repo.marcarPedidoEntregue(pedidoId, dataRecebimento);
-        return 'Entregue';
-      }
-
+    if (todosEntregues) {
+      // Tudo entregue -> 'Entregue' (data_recebimento = maior dt_entrada das NFs).
+      const datas = chaves
+        .filter(lancada)
+        .map((c) => porChave.get(c)?.dt_entrada)
+        .filter((d): d is Date => d instanceof Date);
+      const dataRecebimento = datas.length
+        ? new Date(Math.max(...datas.map((d) => d.getTime())))
+        : new Date();
+      await this.repo.marcarPedidoEntregue(pedidoId, dataRecebimento);
+      return 'Entregue';
+    } else if (algumEntregue) {
+      // Parte entregue (NF lançada), mas não tudo: itens faltando vincular OU
+      // misto de NFs lançadas/não lançadas.
+      novoStatus = 'Entregue parcialmente';
+    } else if (todosFaturados) {
       novoStatus = 'Faturado';
     } else {
       novoStatus = 'Faturado parcialmente';
@@ -945,13 +980,13 @@ export class VinculacaoNfeService {
   }
 
   /**
-   * Marca como 'Entregue' (gravando data_recebimento) os pedidos vinculados às
-   * NF-e que viraram LANCADA no ERP.
-   *
-   * Para cada chave: acha os vínculos CONFIRMADOS dessa chave e, para cada
-   * pedido_id, atualiza com_pedido (status='Entregue', a menos que já esteja
-   * 'Cancelado'; data_recebimento = dt_entrada se vier, senão now()).
-   * Idempotente: não reescreve se já estiver 'Entregue' com a mesma data.
+   * Reage às NF-e que viraram LANCADA no ERP recalculando o status dos pedidos
+   * vinculados. Como a conciliação (com_nfe_conciliacao) já foi marcada LANCADA
+   * antes desta chamada, recalcularStatusPedido decide corretamente entre:
+   *   - 'Entregue'              (todos os itens do pedido cobertos por NF lançada)
+   *   - 'Entregue parcialmente' (parte entregue; itens faltando vincular ou em NF
+   *                              ainda não lançada)
+   * Nunca rebaixa 'Entregue' nem altera 'Cancelado'. Idempotente.
    */
   async nfLancada(
     lancadas: Array<{ chave_nfe: string; dt_entrada?: string | null }>,
@@ -959,14 +994,9 @@ export class VinculacaoNfeService {
     const pedidosAtualizados = new Set<string>();
     let atualizados = 0;
 
-    for (const { chave_nfe, dt_entrada } of lancadas ?? []) {
+    for (const { chave_nfe } of lancadas ?? []) {
       const chave = String(chave_nfe ?? '').trim();
       if (!chave) continue;
-
-      const dataRecebimento =
-        dt_entrada && !Number.isNaN(Date.parse(dt_entrada))
-          ? new Date(dt_entrada)
-          : new Date();
 
       const pedidoIds = await this.repo.findPedidoIdsByChaveConfirmados(chave);
       if (!pedidoIds.length) {
@@ -978,19 +1008,15 @@ export class VinculacaoNfeService {
         const pedido = await this.repo.findPedidoEntrega(pedidoId);
         if (!pedido) continue;
 
-        // Nunca rebaixa/altera pedido Cancelado.
+        // Nunca rebaixa/altera pedido Cancelado (recalcular também protege).
         if (pedido.status === 'Cancelado') continue;
 
-        // Idempotência: já Entregue com a mesma data -> não reescreve.
-        const jaEntregue = pedido.status === 'Entregue';
-        const mesmaData =
-          pedido.data_recebimento != null &&
-          pedido.data_recebimento.getTime() === dataRecebimento.getTime();
-        if (jaEntregue && mesmaData) continue;
-
-        await this.repo.marcarPedidoEntregue(pedidoId, dataRecebimento);
-        atualizados++;
-        pedidosAtualizados.add(pedidoId);
+        const statusAntes = pedido.status;
+        const statusNovo = await this.recalcularStatusPedido(pedidoId);
+        if (statusNovo !== statusAntes) {
+          atualizados++;
+          pedidosAtualizados.add(pedidoId);
+        }
       }
     }
 
