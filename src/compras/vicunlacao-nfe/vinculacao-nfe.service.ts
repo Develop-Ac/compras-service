@@ -150,6 +150,29 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Filtra a lista "XML sem vínculo" mantendo apenas os itens da NF que AINDA têm
+   * saldo GLOBAL para vincular: quantidade total do item (snapshot com_nfe_saldo_item)
+   * menos o consumido por vínculos CONFIRMADOS de QUALQUER pedido. Como a mesma NF
+   * abastece vários pedidos, um item já vinculado/faturado em outro pedido NÃO é
+   * "sem vínculo" e deve sair desta lista. Itens com saldo parcial continuam.
+   */
+  private async filtrarXmlSemVinculoPorSaldoGlobal(
+    chaveNfe: string,
+    xmlSemVinculo: ItemXml[],
+  ): Promise<ItemXml[]> {
+    if (!xmlSemVinculo.length) return xmlSemVinculo;
+    const total = await this.repo.totalPorNfItem(chaveNfe);
+    const consumido = await this.repo.consumidoPorNfItem(chaveNfe);
+    return xmlSemVinculo.filter((item) => {
+      const norm = this.normCprod(item.cProd);
+      if (!norm) return true; // sem cProd não há como medir saldo — mantém visível
+      const t = total.get(norm) ?? (item.qCom == null ? 0 : Number(item.qCom));
+      const c = consumido.get(norm) ?? 0;
+      return t - c > 0.001;
+    });
+  }
+
+  /**
    * Pipeline completo: busca XML da NF-e, busca itens da cotação e do pedido,
    * vincula e devolve as 3 listas (vinculados, XML sem vínculo, pedido sem vínculo).
    */
@@ -349,6 +372,13 @@ export class VinculacaoNfeService {
       emitente = conc?.emitente ?? null;
     }
 
+    // "XML sem vínculo" só lista itens da NF que ainda têm saldo GLOBAL para
+    // vincular — itens já vinculados/faturados em OUTROS pedidos saem da lista.
+    const xmlSemVinculoComSaldo = await this.filtrarXmlSemVinculoPorSaldoGlobal(
+      nfe,
+      xmlSemVinculo,
+    );
+
     return {
       pedido_cotacao: pedido,
       chave_nfe: nfe,
@@ -358,11 +388,11 @@ export class VinculacaoNfeService {
         itens_cotacao: itensCotacao.length,
         itens_pedido: pedidoPorCodigo.size,
         vinculados: vinculados.length,
-        xml_sem_vinculo: xmlSemVinculo.length,
+        xml_sem_vinculo: xmlSemVinculoComSaldo.length,
         pedido_sem_vinculo: pedidoSemVinculo.length,
       },
       vinculados,
-      xml_sem_vinculo: xmlSemVinculo,
+      xml_sem_vinculo: xmlSemVinculoComSaldo,
       pedido_sem_vinculo: pedidoSemVinculo,
     };
   }
@@ -1246,7 +1276,15 @@ export class VinculacaoNfeService {
         valor_unitario: p.valor_unitario,
       }));
 
-    const itensXml = vinculadosNoPedido.length + xmlSemVinculo.length;
+    // "XML sem vínculo" só lista itens da NF que ainda têm saldo GLOBAL — itens já
+    // vinculados/faturados em OUTROS pedidos (a mesma NF abastece vários pedidos)
+    // saem da lista, restando só os realmente sem vínculo em pedido nenhum.
+    const xmlSemVinculoComSaldo = await this.filtrarXmlSemVinculoPorSaldoGlobal(
+      v.chave_nfe,
+      xmlSemVinculo,
+    );
+
+    const itensXml = vinculadosNoPedido.length + xmlSemVinculoComSaldo.length;
     const itensPedido = pedidoPorCodigo.size;
 
     // Itens da cotação não ficam no snapshot — conta ao vivo (best-effort; se
@@ -1272,11 +1310,11 @@ export class VinculacaoNfeService {
         itens_cotacao: itensCotacao,
         itens_pedido: itensPedido,
         vinculados: vinculadosNoPedido.length,
-        xml_sem_vinculo: xmlSemVinculo.length,
+        xml_sem_vinculo: xmlSemVinculoComSaldo.length,
         pedido_sem_vinculo: pedidoSemVinculo.length,
       },
       vinculados: vinculadosNoPedido,
-      xml_sem_vinculo: xmlSemVinculo,
+      xml_sem_vinculo: xmlSemVinculoComSaldo,
       pedido_sem_vinculo: pedidoSemVinculo,
     };
   }
