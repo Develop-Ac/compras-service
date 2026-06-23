@@ -234,8 +234,11 @@ export class VinculacaoNfeController {
   @ApiParam({ name: 'vinculoId', description: 'com_pedido_nfe_vinculo.id' })
   @ApiResponse({ status: 200, description: 'Vínculo confirmado e status recalculado.' })
   @ApiResponse({ status: 404, description: 'Vínculo não encontrado.' })
-  async confirmar(@Param('vinculoId') vinculoId: string) {
-    return this.service.confirmarVinculo(vinculoId);
+  async confirmar(
+    @Param('vinculoId') vinculoId: string,
+    @Body() body?: { usuario?: string },
+  ) {
+    return this.service.confirmarVinculo(vinculoId, body?.usuario ?? null);
   }
 
   // POST /compras/vinculacao-nfe/:vinculoId/rejeitar
@@ -250,8 +253,11 @@ export class VinculacaoNfeController {
   @ApiParam({ name: 'vinculoId', description: 'com_pedido_nfe_vinculo.id' })
   @ApiResponse({ status: 200, description: 'Sugestão rejeitada e status revertido.' })
   @ApiResponse({ status: 404, description: 'Vínculo não encontrado.' })
-  async rejeitar(@Param('vinculoId') vinculoId: string) {
-    return this.service.rejeitarVinculo(vinculoId);
+  async rejeitar(
+    @Param('vinculoId') vinculoId: string,
+    @Body() body?: { usuario?: string },
+  ) {
+    return this.service.rejeitarVinculo(vinculoId, body?.usuario ?? null);
   }
 
   // DELETE /compras/vinculacao-nfe/:vinculoId
@@ -262,7 +268,10 @@ export class VinculacaoNfeController {
   })
   @ApiParam({ name: 'vinculoId', description: 'com_pedido_nfe_vinculo.id' })
   @ApiResponse({ status: 404, description: 'Vínculo não encontrado.' })
-  async remover(@Param('vinculoId') vinculoId: string) {
-    return this.service.removerVinculo(vinculoId);
+  async remover(
+    @Param('vinculoId') vinculoId: string,
+    @Body() body?: { usuario?: string },
+  ) {
+    return this.service.removerVinculo(vinculoId, body?.usuario ?? null);
   }
 }

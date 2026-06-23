@@ -87,6 +87,35 @@ export class VinculacaoNfeService {
   ) {}
 
   /**
+   * Registra uma entrada no Histórico de Alterações do pedido (tela
+   * 'Detalhes do Pedido'), via log-service. A descrição DEVE conter
+   * "pedido <pedido_id>" para casar com o filtro do histórico (o id é depois
+   * substituído pelo nº da cotação na exibição). Fire-and-forget: uma falha de
+   * log nunca quebra a operação de vínculo.
+   */
+  private async registrarLogPedido(args: {
+    usuario?: string | null;
+    acao: string;
+    descricao: string;
+  }): Promise<void> {
+    try {
+      await fetch('http://log-service.acacessorios.local/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usuario: args.usuario ?? null,
+          setor: 'Compras',
+          tela: 'Detalhes do Pedido',
+          acao: args.acao,
+          descricao: args.descricao,
+        }),
+      });
+    } catch (err: any) {
+      this.logger.warn(`Falha ao registrar log de vínculo de NF-e: ${err?.message || err}`);
+    }
+  }
+
+  /**
    * Pipeline completo: busca XML da NF-e, busca itens da cotação e do pedido,
    * vincula e devolve as 3 listas (vinculados, XML sem vínculo, pedido sem vínculo).
    */
@@ -388,6 +417,14 @@ export class VinculacaoNfeService {
 
     // Recalcula o status do pedido a partir da cobertura de itens vinculados.
     const status = await this.recalcularStatusPedido(dto.pedido_id);
+
+    // Histórico do pedido: registra o vínculo da NF-e.
+    const nVinc = totais['vinculado'] ?? 0;
+    await this.registrarLogPedido({
+      usuario: dto.usuario ?? null,
+      acao: 'Vínculo NF-e',
+      descricao: `Vinculou a NF-e ${dto.chave_nfe} ao pedido ${dto.pedido_id} (${nVinc} item(ns) vinculado(s)).`,
+    });
 
     return { ...vinculo, totais, status };
   }
@@ -943,7 +980,7 @@ export class VinculacaoNfeService {
   }
 
   /** Confirma um vínculo (confirmado=true) e recalcula o status do pedido. */
-  async confirmarVinculo(vinculoId: string) {
+  async confirmarVinculo(vinculoId: string, usuario?: string | null) {
     const v = await this.repo.findVinculoById(vinculoId);
     if (!v) {
       throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
@@ -956,6 +993,13 @@ export class VinculacaoNfeService {
     await this.repo.reescoparVinculoItens(vinculoId, v.pedido_id);
     await this.repo.setVinculoConfirmado(vinculoId, true);
     const status = await this.recalcularStatusPedido(v.pedido_id);
+
+    await this.registrarLogPedido({
+      usuario: usuario ?? null,
+      acao: 'Confirmar vínculo NF-e',
+      descricao: `Confirmou o vínculo da NF-e ${v.chave_nfe} ao pedido ${v.pedido_id}.`,
+    });
+
     return { id: vinculoId, confirmado: true, status };
   }
 
@@ -964,7 +1008,7 @@ export class VinculacaoNfeService {
    * auto-vínculo não sugira a mesma NF p/ este pedido de novo) e reverte o status
    * do pedido (volta ao status anterior à sugestão, ficando elegível p/ outras NFs).
    */
-  async rejeitarVinculo(vinculoId: string) {
+  async rejeitarVinculo(vinculoId: string, usuario?: string | null) {
     const v = await this.repo.findVinculoById(vinculoId);
     if (!v) {
       throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
@@ -976,6 +1020,13 @@ export class VinculacaoNfeService {
     if (status === 'Vínculo sugerido') {
       status = await this.repo.reverterStatusPedido(v.pedido_id);
     }
+
+    await this.registrarLogPedido({
+      usuario: usuario ?? null,
+      acao: 'Rejeitar vínculo NF-e',
+      descricao: `Rejeitou a sugestão de vínculo da NF-e ${v.chave_nfe} no pedido ${v.pedido_id}.`,
+    });
+
     return { id: vinculoId, rejeitado: true, status };
   }
 
@@ -1295,12 +1346,13 @@ export class VinculacaoNfeService {
   }
 
   /** Remove um vínculo salvo (cascade apaga os itens). */
-  async removerVinculo(vinculoId: string) {
+  async removerVinculo(vinculoId: string, usuario?: string | null) {
     const v = await this.repo.findVinculoById(vinculoId);
     if (!v) {
       throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
     }
     const pedidoId = v.pedido_id;
+    const chaveNfe = v.chave_nfe;
     await this.repo.deleteVinculo(vinculoId);
 
     // Se não restou nenhum vínculo confirmado, o pedido volta ao estado
@@ -1310,6 +1362,12 @@ export class VinculacaoNfeService {
     const status = restantes.length
       ? await this.recalcularStatusPedido(pedidoId)
       : await this.repo.reverterPedidoParaLiberado(pedidoId);
+
+    await this.registrarLogPedido({
+      usuario: usuario ?? null,
+      acao: 'Remover vínculo NF-e',
+      descricao: `Removeu o vínculo da NF-e ${chaveNfe} do pedido ${pedidoId}.`,
+    });
 
     return { id: vinculoId, removido: true, status };
   }
