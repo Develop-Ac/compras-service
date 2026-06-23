@@ -111,6 +111,40 @@ export class FornecedorGrupoService {
   }
 
   /**
+   * EM LOTE: para um fornecedor e uma lista de produtos, devolve a referência do
+   * fornecedor (com_produto_fornecedor_referencia) — a própria do for_codigo se
+   * houver, senão a de um relacionado do grupo. Sem entrada no mapa quando não há
+   * nenhuma (o chamador usa a referência do cadastro do produto como fallback).
+   * 1 query de grupo + 1 de catálogo.
+   */
+  async referenciasGrupo(
+    forCodigo: number,
+    proCodigos: Array<string | number>,
+  ): Promise<Map<string, string>> {
+    const codigos = [...new Set(proCodigos.map((c) => String(c)).filter(Boolean))];
+    if (!codigos.length || !Number.isFinite(forCodigo)) return new Map();
+    const grupo = await this.repo.expandGrupo(forCodigo);
+    const refs = await this.repo.catalogoRefs(grupo, codigos);
+    const out = new Map<string, string>();
+    for (const codigo of codigos) {
+      // própria do fornecedor primeiro, depois de um relacionado do grupo
+      let r = refs.get(`${forCodigo}|${codigo}`);
+      if (!r) {
+        for (const f of grupo) {
+          if (f === forCodigo) continue;
+          const rr = refs.get(`${f}|${codigo}`);
+          if (rr) {
+            r = rr;
+            break;
+          }
+        }
+      }
+      if (r) out.set(codigo, r);
+    }
+    return out;
+  }
+
+  /**
    * Referência do fornecedor para um produto, considerando o grupo:
    * 1) referência própria (mais recente não-vazia); 2) referência de um relacionado; 3) fallback.
    */

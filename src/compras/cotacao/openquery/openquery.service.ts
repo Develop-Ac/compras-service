@@ -54,13 +54,30 @@ export class ConsultaOpenqueryService {
   /**
    * Busca dados do fornecedor por for_codigo (empresa fixa = 3).
    */
-  async buscarFornecedorPorCodigo(forCodigo: number): Promise<FornecedorRow> {
+  async buscarFornecedorPorCodigo(forCodigo: number): Promise<any> {
     const empresa = 3; // conforme sua regra atual
 
     try {
       const row = await this.repository.findFornecedorByCodigo(empresa, forCodigo);
       if (!row) throw new NotFoundException('Fornecedor não encontrado.');
-      return row;
+      // Devolve em minúsculas (shape do repo) E em MAIÚSCULAS (FOR_NOME, ...),
+      // pois há telas que leem cada um. O findFornecedorByCodigo foi normalizado
+      // p/ minúsculas; estes aliases evitam quebrar quem ainda lê MAIÚSCULAS.
+      return {
+        ...row,
+        FOR_CODIGO: row.for_codigo,
+        FOR_NOME: row.for_nome,
+        CPF_CNPJ: row.cpf_cnpj,
+        RG_IE: row.rg_ie,
+        ENDERECO: row.endereco,
+        BAIRRO: row.bairro,
+        NUMERO: row.numero,
+        CIDADE: row.cidade,
+        UF: row.uf,
+        EMAIL: row.email,
+        FONE: row.fone,
+        CONTATO: row.contato,
+      };
     } catch (err: any) {
       if (err?.status === 404) throw err;
       throw new InternalServerErrorException('Falha ao buscar fornecedor');

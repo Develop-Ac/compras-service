@@ -116,6 +116,25 @@ export class VinculacaoNfeService {
   }
 
   /**
+   * Sobrescreve a referência EXIBIDA dos itens do pedido pela referência por
+   * fornecedor (com_produto_fornecedor_referencia, do próprio fornecedor do
+   * pedido ou de um relacionado do grupo). Mantém a referência do cadastro do
+   * produto quando não houver relacionamento. Muta o mapa in-place.
+   */
+  private async aplicarRefDoFornecedor(
+    forCodigo: number | null | undefined,
+    pedidoPorCodigo: Map<string, ItemPedido>,
+  ): Promise<void> {
+    if (forCodigo == null || !pedidoPorCodigo.size) return;
+    const refs = await this.grupo.referenciasGrupo(forCodigo, [...pedidoPorCodigo.keys()]);
+    if (!refs.size) return;
+    for (const [codigo, p] of pedidoPorCodigo) {
+      const rg = refs.get(codigo);
+      if (rg) p.referencia = rg;
+    }
+  }
+
+  /**
    * Carrega e unifica os itens da cotação (Firebird PEDIDOS_COTACOES + Postgres
    * com_cotacao_itens_for), já com as referências de fornecedor enriquecidas pelo
    * grupo. Exposto para que o auto-vínculo/botão "Sugerir" busque UMA vez e reuse
@@ -190,6 +209,12 @@ export class VinculacaoNfeService {
         valor_unitario: r.valor_unitario == null ? null : Number(r.valor_unitario),
       });
     }
+
+    // 3.0) Referência exibida (pedido sem vínculo / vinculado): prioriza a
+    //      referência POR FORNECEDOR (com_produto_fornecedor_referencia, do
+    //      próprio fornecedor do pedido ou de um relacionado do grupo). Se não
+    //      houver, mantém a referência do cadastro do produto (com_pedido_itens).
+    await this.aplicarRefDoFornecedor(forCodigo, pedidoPorCodigo);
 
     // 3.1) Saldo da NF: semeia o snapshot do total por item (qCom agregado por cProd)
     //      e carrega o consumido (vínculos confirmados) da NF (outros pedidos) e do
@@ -1179,6 +1204,10 @@ export class VinculacaoNfeService {
         valor_unitario: r.valor_unitario == null ? null : Number(r.valor_unitario),
       });
     }
+
+    // Referência exibida = referência por fornecedor (grupo), com fallback no
+    // cadastro do produto. v.for_codigo é o fornecedor deste vínculo.
+    await this.aplicarRefDoFornecedor(v.for_codigo, pedidoPorCodigo);
 
     const vinculadosNoPedido: ItemVinculado[] = [];
     for (const vinc of vinculados) {
