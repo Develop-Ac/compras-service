@@ -858,6 +858,87 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  /**
+   * Reaplica o escopo por fornecedor aos itens de um vínculo já gravado, usando
+   * os itens REAIS do pedido (com_pedido_itens do pedido_id, que é de um único
+   * fornecedor). Corrige snapshots antigos (gerados sem o filtro por fornecedor):
+   *   1) itens tipo='vinculado' cujo pro_codigo NÃO pertence ao pedido voltam para
+   *      tipo='xml_sem_vinculo' (limpando o lado do pedido / alocação);
+   *   2) os itens tipo='pedido_sem_vinculo' são reconstruídos a partir dos itens
+   *      reais do pedido ainda não vinculados.
+   * Não altera os itens já corretos. Idempotente.
+   */
+  async reescoparVinculoItens(vinculoId: string, pedidoId: string): Promise<void> {
+    // Itens reais do pedido (deste fornecedor), deduplicados por pro_codigo.
+    const reais = await this.prisma.com_pedido_itens.findMany({
+      where: { pedido_id: pedidoId },
+      select: {
+        pro_codigo: true,
+        pro_descricao: true,
+        quantidade: true,
+        valor_unitario: true,
+      },
+    });
+    const realPorCod = new Map<number, (typeof reais)[number]>();
+    for (const r of reais) {
+      if (!realPorCod.has(r.pro_codigo)) realPorCod.set(r.pro_codigo, r);
+    }
+
+    const itens = await this.prisma.com_pedido_nfe_vinculo_item.findMany({
+      where: { vinculo_id: vinculoId },
+      select: { id: true, tipo: true, pro_codigo: true },
+    });
+
+    const vinculadosForaDoPedido: string[] = [];
+    const codigosVinculadosNoPedido = new Set<number>();
+    for (const it of itens) {
+      if (it.tipo !== 'vinculado') continue;
+      if (it.pro_codigo != null && realPorCod.has(Number(it.pro_codigo))) {
+        codigosVinculadosNoPedido.add(Number(it.pro_codigo));
+      } else {
+        vinculadosForaDoPedido.push(it.id);
+      }
+    }
+
+    const novosPedidoSemVinculo: Prisma.com_pedido_nfe_vinculo_itemCreateManyInput[] = [
+      ...realPorCod.values(),
+    ]
+      .filter((r) => !codigosVinculadosNoPedido.has(r.pro_codigo))
+      .map((r) => ({
+        vinculo_id: vinculoId,
+        tipo: 'pedido_sem_vinculo',
+        pro_codigo: r.pro_codigo,
+        pro_descricao: r.pro_descricao,
+        quantidade_pedido: r.quantidade ?? null,
+        valor_pedido: r.valor_unitario ?? null,
+      }));
+
+    await this.prisma.$transaction(async (tx) => {
+      if (vinculadosForaDoPedido.length) {
+        await tx.com_pedido_nfe_vinculo_item.updateMany({
+          where: { id: { in: vinculadosForaDoPedido } },
+          data: {
+            tipo: 'xml_sem_vinculo',
+            pro_codigo: null,
+            pro_descricao: null,
+            quantidade_pedido: null,
+            valor_pedido: null,
+            quantidade_alocada: null,
+            excede_saldo: false,
+            match_campo: 'Fora do pedido (reescopo)',
+            match_valor: null,
+          },
+        });
+      }
+      await tx.com_pedido_nfe_vinculo_item.deleteMany({
+        where: { vinculo_id: vinculoId, tipo: 'pedido_sem_vinculo' },
+      });
+      if (novosPedidoSemVinculo.length) {
+        await tx.com_pedido_nfe_vinculo_item.createMany({ data: novosPedidoSemVinculo });
+      }
+    });
+  }
+
   /** Atualiza o status de um pedido. */
   async updatePedidoStatus(pedidoId: string, status: string) {
     return this.prisma.com_pedido.update({

@@ -913,6 +913,12 @@ export class VinculacaoNfeService {
     if (!v) {
       throw new NotFoundException(`Vínculo ${vinculoId} não encontrado.`);
     }
+    // Reaplica o escopo por fornecedor ANTES de confirmar: snapshots antigos (de
+    // antes do filtro por fornecedor) podem ter vinculados casados contra item de
+    // OUTRO fornecedor da mesma cotação. Esses voltam a 'xml_sem_vinculo' e a lista
+    // 'pedido_sem_vinculo' é reconstruída a partir dos itens reais do pedido, para
+    // nunca confirmar/consumir saldo de NF num produto que não é deste pedido.
+    await this.repo.reescoparVinculoItens(vinculoId, v.pedido_id);
     await this.repo.setVinculoConfirmado(vinculoId, true);
     const status = await this.recalcularStatusPedido(v.pedido_id);
     return { id: vinculoId, confirmado: true, status };
@@ -1011,7 +1017,6 @@ export class VinculacaoNfeService {
 
     const vinculados: ItemVinculado[] = [];
     const xmlSemVinculo: ItemXml[] = [];
-    const pedidoSemVinculo: any[] = [];
 
     for (const it of v.itens) {
       if (it.tipo === 'vinculado') {
@@ -1041,27 +1046,79 @@ export class VinculacaoNfeService {
           vUnCom: num(it.vuncom_xml),
           vProd: null,
         });
+      }
+      // Itens tipo 'pedido_sem_vinculo' do snapshot são IGNORADOS de propósito:
+      // a lista é RECALCULADA abaixo a partir dos itens REAIS do pedido deste
+      // fornecedor (com_pedido_itens). Snapshots antigos podem ter sido gerados
+      // sem o escopo por fornecedor e conter itens de toda a cotação.
+    }
+
+    // ----------------------------------------------------------------------
+    // FILTRO FINAL POR PEDIDO/FORNECEDOR
+    // ----------------------------------------------------------------------
+    // O pedido_id deste vínculo é, por construção (com_pedido @@unique
+    // [pedido_cotacao, for_codigo]), de UM único fornecedor. Logo, os
+    // com_pedido_itens desse pedido_id são exatamente "o que de fato foi para o
+    // pedido daquele fornecedor". Reaplicamos esse escopo ao snapshot salvo:
+    //  - vinculados cujo produto NÃO está no pedido (casados contra a cotação de
+    //    outro fornecedor) voltam para "XML sem vínculo";
+    //  - "Pedido sem vínculo" passa a ser derivado dos itens reais do pedido.
+    const itensPedidoRows = await this.repo.findPedidoItens([v.pedido_id]);
+    const pedidoPorCodigo = new Map<string, ItemPedido>();
+    for (const r of itensPedidoRows) {
+      const key = String(r.pro_codigo);
+      if (pedidoPorCodigo.has(key)) continue;
+      pedidoPorCodigo.set(key, {
+        pro_codigo: r.pro_codigo,
+        pro_descricao: r.pro_descricao,
+        mar_descricao: r.mar_descricao,
+        referencia: r.referencia,
+        unidade: r.unidade,
+        for_codigo: r.for_codigo,
+        quantidade: r.quantidade == null ? null : Number(r.quantidade),
+        valor_unitario: r.valor_unitario == null ? null : Number(r.valor_unitario),
+      });
+    }
+
+    const vinculadosNoPedido: ItemVinculado[] = [];
+    for (const vinc of vinculados) {
+      const cod = vinc.pro_codigo == null ? null : String(vinc.pro_codigo);
+      if (cod != null && pedidoPorCodigo.has(cod)) {
+        vinculadosNoPedido.push(vinc);
       } else {
-        pedidoSemVinculo.push({
-          pro_codigo: it.pro_codigo,
-          pro_descricao: it.pro_descricao,
-          quantidade: num(it.quantidade_pedido),
-          valor_unitario: num(it.valor_pedido),
+        // Produto não pertence a este pedido: o item da NF volta a ficar sem vínculo.
+        xmlSemVinculo.push({
+          cProd: vinc.cprod_xml ?? '',
+          xProd: vinc.produto_xml ?? '',
+          qCom: vinc.quantidade_xml ?? null,
+          vUnCom: vinc.vuncom_xml ?? null,
+          vProd: null,
         });
       }
     }
 
-    // Totais derivados do snapshot, p/ a tela mostrar a totalização também na
-    // sugestão salva (carregarVinculo), igual ao cálculo ao vivo (vincular).
-    const itensXml = vinculados.length + xmlSemVinculo.length;
-    const proCodigosPedido = new Set<string>();
-    for (const it of vinculados) {
-      if (it.pro_codigo != null) proCodigosPedido.add(String(it.pro_codigo));
-    }
-    for (const it of pedidoSemVinculo) {
-      if (it?.pro_codigo != null) proCodigosPedido.add(String(it.pro_codigo));
-    }
-    const itensPedido = proCodigosPedido.size;
+    const proCodigosVinculados = new Set(
+      vinculadosNoPedido
+        .map((x) => x.pro_codigo)
+        .filter((c) => c != null)
+        .map((c) => String(c)),
+    );
+
+    const pedidoSemVinculo = [...pedidoPorCodigo.values()]
+      .filter((p) => !proCodigosVinculados.has(String(p.pro_codigo)))
+      .map((p) => ({
+        pro_codigo: p.pro_codigo,
+        pro_descricao: p.pro_descricao,
+        mar_descricao: p.mar_descricao,
+        referencia: p.referencia,
+        unidade: p.unidade,
+        for_codigo: p.for_codigo,
+        quantidade: p.quantidade,
+        valor_unitario: p.valor_unitario,
+      }));
+
+    const itensXml = vinculadosNoPedido.length + xmlSemVinculo.length;
+    const itensPedido = pedidoPorCodigo.size;
 
     // Itens da cotação não ficam no snapshot — conta ao vivo (best-effort; se
     // falhar, fica 0 sem quebrar o carregamento da conferência).
@@ -1085,11 +1142,11 @@ export class VinculacaoNfeService {
         itens_xml: itensXml,
         itens_cotacao: itensCotacao,
         itens_pedido: itensPedido,
-        vinculados: vinculados.length,
+        vinculados: vinculadosNoPedido.length,
         xml_sem_vinculo: xmlSemVinculo.length,
         pedido_sem_vinculo: pedidoSemVinculo.length,
       },
-      vinculados,
+      vinculados: vinculadosNoPedido,
       xml_sem_vinculo: xmlSemVinculo,
       pedido_sem_vinculo: pedidoSemVinculo,
     };
