@@ -90,6 +90,14 @@ export class FornecedorGrupoService {
     return this.repo.expandGrupo(forCodigo);
   }
 
+  /**
+   * True se o fornecedor (via grupo) usa "referência no final da descrição" — o
+   * número de referência vem no fim do xProd, não no código (ex.: ARTEB).
+   */
+  refNaDescricao(forCodigo: number): Promise<boolean> {
+    return this.repo.grupoTemRefDescricao(forCodigo);
+  }
+
   /** CNPJs (só dígitos) de todos os fornecedores do grupo do for_codigo (inclui ele mesmo). */
   async cnpjsDoGrupo(forCodigo: number): Promise<string[]> {
     const grupo = await this.repo.expandGrupo(forCodigo);

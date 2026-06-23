@@ -138,7 +138,7 @@ export class VinculacaoNfeService {
     pedido: number,
     nfe: string,
     forCodigo?: number | null,
-    opts?: { itensCotacao?: ItemCotacao[] },
+    opts?: { itensCotacao?: ItemCotacao[]; refDescricao?: boolean },
   ) {
     // 1) XML da NF-e — Postgres PRIMEIRO.
     // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
@@ -227,6 +227,13 @@ export class VinculacaoNfeService {
 
     const indices = this.indexarCotacao(itensCotacao);
 
+    // Fornecedor com "referência no final da descrição" (ex.: ARTEB): o match
+    // também extrai o número do fim do xProd. Calculado 1x por pedido (pode vir
+    // pronto do chamador via opts p/ evitar reconsulta por NF).
+    const refDesc =
+      opts?.refDescricao ??
+      (forCodigo != null ? await this.grupo.refNaDescricao(forCodigo) : false);
+
     // Preço por pro_codigo (do pedido) para reforçar o match semântico pelo Vlr Un.
     const precoPorCodigo = new Map<string, number>();
     for (const [codigo, p] of pedidoPorCodigo) {
@@ -235,7 +242,7 @@ export class VinculacaoNfeService {
 
     for (const item of itensXml) {
       const match =
-        this.encontrarMatch(item, indices) ??
+        this.encontrarMatch(item, indices, refDesc) ??
         this.matchSemantico(item, itensCotacao, usados, precoPorCodigo);
       if (match) {
         const codigo = match.item.pro_codigo;
@@ -1634,6 +1641,17 @@ export class VinculacaoNfeService {
     return String(s).replace(/\s+/g, '').toUpperCase().replace(/^0+(?=.)/, '');
   }
 
+  /**
+   * Para fornecedores marcados com "referência no final da descrição" (ex.: ARTEB):
+   * a referência vem como número no FIM do xProd, depois do último "-".
+   * '... MARCA ARTEB - 460405' -> '460405'.
+   */
+  private refDoFinalDescricao(s: string | null | undefined): string {
+    if (!s) return '';
+    const m = String(s).match(/-\s*(\d+)\s*$/);
+    return m ? m[1] : '';
+  }
+
   /** Extrai o "código" do início do xProd, ex.: 'FCA1130DS PARA-BRISAS ...' -> 'FCA1130DS'. */
   private refDoXprod(xprod: string): string {
     if (!xprod) return '';
@@ -1665,11 +1683,18 @@ export class VinculacaoNfeService {
   private encontrarMatch(
     item: ItemXml,
     indices: Record<ColunaCotacao, Map<string, ItemCotacao[]>>,
+    refDesc = false,
   ): { item: ItemCotacao; campo: string; valor: string | null } | null {
     const chaves: Record<string, string> = {
       cProd: this.normRef(item.cProd),
       'xProd[0]': this.normRef(this.refDoXprod(item.xProd)),
     };
+    // Fornecedor com referência no fim da descrição (ex.: ARTEB): o número de
+    // referência vem no fim do xProd, não no cProd. Tenta casá-lo também.
+    if (refDesc) {
+      const tail = this.normRef(this.refDoFinalDescricao(item.xProd));
+      if (tail) chaves['descFinal'] = tail;
+    }
 
     for (const chave of Object.values(chaves)) {
       if (!chave) continue;

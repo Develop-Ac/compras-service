@@ -48,6 +48,23 @@ export class FornecedorGrupoRepository {
     return [...set];
   }
 
+  /**
+   * True se o GRUPO do fornecedor está marcado como "referência no final da
+   * descrição" (flag ref_descricao em qualquer membro). Usado no match de NF-e
+   * para extrair a referência do fim do xProd (ex.: ARTEB).
+   */
+  async grupoTemRefDescricao(forCodigo: number): Promise<boolean> {
+    const row = await this.prisma.com_fornecedor_relacionamento.findUnique({
+      where: { for_codigo: forCodigo },
+      select: { group_id: true },
+    });
+    if (!row) return false;
+    const n = await this.prisma.com_fornecedor_relacionamento.count({
+      where: { group_id: row.group_id, ref_descricao: true },
+    });
+    return n > 0;
+  }
+
   /** Mapa for_codigo -> membros do grupo, para uma lista de fornecedores (1-2 queries). */
   async gruposDe(forCodigos: number[]): Promise<Map<number, number[]>> {
     const out = new Map<number, number[]>();

@@ -240,6 +240,9 @@ export class AutoVinculoService {
       | Awaited<ReturnType<VinculacaoNfeService['carregarItensCotacao']>>
       | undefined;
 
+    // "Referência no final da descrição" (ex.: ARTEB) — 1x por pedido.
+    const refDescricao = await this.grupo.refNaDescricao(pedido.for_codigo);
+
     for (const nf of candidatas) {
       const chave = String(nf.CHAVE_NFE ?? '').trim();
       if (!chave) continue;
@@ -259,7 +262,7 @@ export class AutoVinculoService {
           pedido.pedido_cotacao,
           chave,
           pedido.for_codigo,
-          { itensCotacao: itensCotacaoPedido },
+          { itensCotacao: itensCotacaoPedido, refDescricao },
         );
       } catch (err: any) {
         this.logger.warn(
