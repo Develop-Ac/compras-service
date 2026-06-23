@@ -516,6 +516,17 @@ export class VinculacaoNfeRepository {
     return v != null;
   }
 
+  /** Estado do vínculo do par pedido_id + chave_nfe (null se não existir). */
+  async findVinculoEstadoParaPar(
+    pedidoId: string,
+    chaveNfe: string,
+  ): Promise<{ confirmado: boolean; rejeitado: boolean } | null> {
+    return this.prisma.com_pedido_nfe_vinculo.findUnique({
+      where: { pedido_id_chave_nfe: { pedido_id: pedidoId, chave_nfe: chaveNfe } },
+      select: { confirmado: true, rejeitado: true },
+    });
+  }
+
   /**
    * Seta o status do pedido para 'Vínculo sugerido', SEM rebaixar
    * 'Entregue' nem 'Cancelado'. Guarda o status anterior (status_anterior) p/

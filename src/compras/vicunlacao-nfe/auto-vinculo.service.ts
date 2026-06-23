@@ -184,8 +184,11 @@ export class AutoVinculoService {
       const chave = String(nf.CHAVE_NFE ?? '').trim();
       if (!chave) continue;
 
-      // Evita duplicar: já existe vínculo (qualquer) p/ esse par pedido+chave.
-      if (await this.repo.existeVinculoParaPar(pedido.id, chave)) continue;
+      // Não mexe em vínculos CONFIRMADOS nem em REJEIÇÕES. Sugestões pendentes
+      // são reprocessadas (refresh) — assim, mudanças na lógica de casamento
+      // corrigem sozinhas as sugestões antigas, sem precisar apagar à mão.
+      const estado = await this.repo.findVinculoEstadoParaPar(pedido.id, chave);
+      if (estado && (estado.confirmado || estado.rejeitado)) continue;
 
       let resultado: Awaited<ReturnType<VinculacaoNfeService['vincular']>>;
       try {
@@ -207,6 +210,11 @@ export class AutoVinculoService {
       const cobertura = proCodigosVinculados.size / totalItens;
       if (cobertura < COBERTURA_MINIMA) continue;
 
+      // Re-checa logo antes de salvar: se durante o cálculo o usuário confirmou ou
+      // rejeitou este par, não sobrescreve.
+      const estadoAgora = await this.repo.findVinculoEstadoParaPar(pedido.id, chave);
+      if (estadoAgora && (estadoAgora.confirmado || estadoAgora.rejeitado)) continue;
+
       await this.vinculacao.salvarSugestao({
         pedido_id: pedido.id,
         pedido_cotacao: pedido.pedido_cotacao,
@@ -219,11 +227,15 @@ export class AutoVinculoService {
       });
 
       await this.repo.marcarPedidoVinculoSugerido(pedido.id);
-      criadas++;
 
-      this.logger.log(
-        `Sugestão criada: pedido ${pedido.id} (cotação ${pedido.pedido_cotacao}) x NF ${chave} — cobertura ${(cobertura * 100).toFixed(0)}%.`,
-      );
+      // Conta/loga só sugestões NOVAS; refresh de sugestões pendentes é silencioso
+      // (acontece a cada ciclo e poluiria o log).
+      if (!estado) {
+        criadas++;
+        this.logger.log(
+          `Sugestão criada: pedido ${pedido.id} (cotação ${pedido.pedido_cotacao}) x NF ${chave} — cobertura ${(cobertura * 100).toFixed(0)}%.`,
+        );
+      }
     }
 
     return criadas;

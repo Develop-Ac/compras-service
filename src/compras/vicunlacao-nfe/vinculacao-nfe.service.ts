@@ -1051,12 +1051,40 @@ export class VinculacaoNfeService {
       }
     }
 
+    // Totais derivados do snapshot, p/ a tela mostrar a totalização também na
+    // sugestão salva (carregarVinculo), igual ao cálculo ao vivo (vincular).
+    const itensXml = vinculados.length + xmlSemVinculo.length;
+    const proCodigosPedido = new Set<string>();
+    for (const it of vinculados) {
+      if (it.pro_codigo != null) proCodigosPedido.add(String(it.pro_codigo));
+    }
+    for (const it of pedidoSemVinculo) {
+      if (it?.pro_codigo != null) proCodigosPedido.add(String(it.pro_codigo));
+    }
+    const itensPedido = proCodigosPedido.size;
+
+    // Itens da cotação não ficam no snapshot — conta ao vivo (best-effort; se
+    // falhar, fica 0 sem quebrar o carregamento da conferência).
+    let itensCotacao = 0;
+    try {
+      const [fb, pg] = await Promise.all([
+        this.repo.findCotacaoItens(v.pedido_cotacao),
+        this.repo.findCotacaoItensFor(v.pedido_cotacao),
+      ]);
+      itensCotacao = fb.length + pg.length;
+    } catch {
+      itensCotacao = 0;
+    }
+
     return {
       vinculo_id: v.id,
       pedido_cotacao: v.pedido_cotacao,
       chave_nfe: v.chave_nfe,
       emitente: v.emitente,
       totais: {
+        itens_xml: itensXml,
+        itens_cotacao: itensCotacao,
+        itens_pedido: itensPedido,
         vinculados: vinculados.length,
         xml_sem_vinculo: xmlSemVinculo.length,
         pedido_sem_vinculo: pedidoSemVinculo.length,
