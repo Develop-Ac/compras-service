@@ -77,6 +77,18 @@ type ColunaCotacao = (typeof COLUNAS_COTACAO)[number];
 // ser considerado DIVERGENTE. Diferenças menores são ignoradas (centavos/IPI/etc.).
 const TOLERANCIA_VALOR_DIVERGENTE = 1;
 
+/** Rótulo limpo do papel do tomador/modalidade (tolera mojibake do XML do CT-e). */
+function labelModalidade(raw?: string | null): string | null {
+  const s = String(raw || '').toUpperCase();
+  if (!s) return null;
+  if (s.startsWith('REMET')) return 'Remetente';
+  if (s.startsWith('DESTINAT')) return 'Destinatário';
+  if (s.startsWith('EXPED')) return 'Expedidor';
+  if (s.startsWith('RECEB')) return 'Recebedor';
+  if (s.startsWith('OUTRO')) return 'Outros';
+  return raw || null;
+}
+
 @Injectable()
 export class VinculacaoNfeService {
   private readonly logger = new Logger(VinculacaoNfeService.name);
@@ -1089,7 +1101,7 @@ export class VinculacaoNfeService {
       await this.repo.updatePedidoTransportadora(pedidoId, {
         nomeFrete: maisRecente.transportadora ?? undefined,
         frete: freteNossaConta,
-        categoriaFrete: maisRecente.modalidade ?? undefined,
+        categoriaFrete: labelModalidade(maisRecente.modalidade) ?? undefined,
       });
     }
 
