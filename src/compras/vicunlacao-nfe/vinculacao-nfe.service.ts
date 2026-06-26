@@ -1012,6 +1012,10 @@ export class VinculacaoNfeService {
     const porChave = new Map(concs.map((c) => [c.chave_nfe, c]));
     const lancada = (chave: string) => porChave.get(chave)?.status_erp === 'LANCADA';
 
+    // Há CT-e em trânsito (coberto pelo SSW) entre as NFs ainda não lançadas?
+    const transporte = await this.repo.findTransporteByChaves(chaves);
+    const temEmTransito = transporte.some((t) => t.em_movimento && !lancada(t.chave_nfe));
+
     let todosEntregues = true; // todo item coberto e 100% das suas NFs lançadas
     let algumEntregue = false; // existe item com ao menos uma NF lançada
     let todosFaturados = true; // todo item coberto (lançado ou não)
@@ -1045,9 +1049,11 @@ export class VinculacaoNfeService {
       // misto de NFs lançadas/não lançadas.
       novoStatus = 'Entregue parcialmente';
     } else if (todosFaturados) {
-      novoStatus = 'Faturado';
+      // NF vinculada, não lançada: 'Em Trânsito' quando o CT-e está em movimento (coberto
+      // pelo SSW); senão mantém 'Faturado'.
+      novoStatus = temEmTransito ? 'Em Trânsito' : 'Faturado';
     } else {
-      novoStatus = 'Faturado parcialmente';
+      novoStatus = temEmTransito ? 'Em Trânsito parcialmente' : 'Faturado parcialmente';
     }
 
     if (novoStatus && novoStatus !== statusAtual) {
@@ -1055,6 +1061,40 @@ export class VinculacaoNfeService {
     }
 
     return novoStatus;
+  }
+
+  /**
+   * Sincroniza os dados de transportadora do pedido a partir do(s) CT-e(s) das NFs
+   * vinculadas (sempre sobrescreve) e recalcula o status (que já inclui 'Em Trânsito').
+   * Usado pelo cron de transporte e ao confirmar vínculo.
+   */
+  async sincronizarTransportePedido(
+    pedidoId: string,
+  ): Promise<{ status: string | null; transportadora: string | null }> {
+    const chaves = await this.repo.findChavesConfirmadasDoPedido(pedidoId);
+    if (!chaves.length) {
+      return { status: await this.recalcularStatusPedido(pedidoId), transportadora: null };
+    }
+
+    const transporte = await this.repo.findTransporteByChaves(chaves);
+    if (transporte.length) {
+      // CT-e mais recente define transportadora/modalidade do card-resumo do pedido.
+      const maisRecente = transporte.reduce((a, b) =>
+        (a.data_emissao?.getTime() ?? 0) >= (b.data_emissao?.getTime() ?? 0) ? a : b,
+      );
+      // Frete a pagar = soma dos CT-es "por nossa conta".
+      const freteNossaConta = transporte
+        .filter((t) => t.nossa_conta)
+        .reduce((acc, t) => acc + Number(t.valor_frete || 0), 0);
+      await this.repo.updatePedidoTransportadora(pedidoId, {
+        nomeFrete: maisRecente.transportadora ?? undefined,
+        frete: freteNossaConta,
+        categoriaFrete: maisRecente.modalidade ?? undefined,
+      });
+    }
+
+    const status = await this.recalcularStatusPedido(pedidoId);
+    return { status, transportadora: transporte[0]?.transportadora ?? null };
   }
 
   /** Confirma um vínculo (confirmado=true) e recalcula o status do pedido. */
@@ -1070,7 +1110,8 @@ export class VinculacaoNfeService {
     // nunca confirmar/consumir saldo de NF num produto que não é deste pedido.
     await this.repo.reescoparVinculoItens(vinculoId, v.pedido_id);
     await this.repo.setVinculoConfirmado(vinculoId, true);
-    const status = await this.recalcularStatusPedido(v.pedido_id);
+    // Sincroniza transportadora do CT-e + recalcula status (inclui 'Em Trânsito').
+    const { status } = await this.sincronizarTransportePedido(v.pedido_id);
 
     await this.registrarLogPedido({
       usuario: usuario ?? null,

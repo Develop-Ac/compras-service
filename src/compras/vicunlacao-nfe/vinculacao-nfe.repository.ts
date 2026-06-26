@@ -491,6 +491,7 @@ export class VinculacaoNfeRepository {
             'Aguardando analise',
             'Liberado',
             'Faturado parcialmente',
+            'Em Trânsito parcialmente',
             'Entregue parcialmente',
           ],
         },
@@ -1045,6 +1046,16 @@ export class VinculacaoNfeRepository {
     return rows.map((r) => r.pedido_id);
   }
 
+  /** Chaves de NF confirmadas (e não rejeitadas) de um pedido. */
+  async findChavesConfirmadasDoPedido(pedidoId: string): Promise<string[]> {
+    const rows = await this.prisma.com_pedido_nfe_vinculo.findMany({
+      where: { pedido_id: pedidoId, confirmado: true, rejeitado: false },
+      select: { chave_nfe: true },
+      distinct: ['chave_nfe'],
+    });
+    return rows.map((r) => r.chave_nfe).filter(Boolean);
+  }
+
   /** Lê o pedido (id, status, data_recebimento) para a marcação de Entregue. */
   async findPedidoEntrega(pedidoId: string) {
     return this.prisma.com_pedido.findUnique({
@@ -1059,5 +1070,80 @@ export class VinculacaoNfeRepository {
       where: { id: pedidoId },
       data: { status: 'Entregue', data_recebimento: dataRecebimento },
     });
+  }
+
+  // --------------------- Transporte (CT-e / rastreio) ------------------------
+
+  /**
+   * Para um lote de chaves de NF, resolve o CT-e que a transporta (em com_cte_documento,
+   * via dados_json->'documentosNFe'). Um registro por chave (o melhor: com rastreio /
+   * mais recente). `em_movimento` = CT-e coberto pelo SSW com rastreio (em trânsito).
+   * Leitura do schema do calculadora-st-service no mesmo Postgres.
+   */
+  async findTransporteByChaves(chavesNfe: string[]): Promise<
+    Array<{
+      chave_nfe: string;
+      cte_chave: string;
+      transportadora: string | null;
+      cnpj: string | null;
+      modalidade: string | null;
+      nossa_conta: boolean | null;
+      valor_frete: number | null;
+      data_emissao: Date | null;
+      em_movimento: boolean | null;
+    }>
+  > {
+    const chaves = [
+      ...new Set((chavesNfe || []).map((c) => String(c || '').replace(/\D/g, '')).filter((c) => c.length === 44)),
+    ];
+    if (!chaves.length) return [];
+    const inList = chaves.map((c) => `'${c}'`).join(',');
+    return this.prisma.$queryRawUnsafe(
+      `SELECT DISTINCT ON (j.chave)
+              j.chave            AS chave_nfe,
+              c.chave_acesso     AS cte_chave,
+              c.emitente_nome    AS transportadora,
+              c.emitente_cnpj    AS cnpj,
+              c.modalidade_pagador AS modalidade,
+              c.tomador_nos      AS nossa_conta,
+              c.valor_total      AS valor_frete,
+              c.data_emissao     AS data_emissao,
+              (c.rastreio_cobertura = 'COBERTO' AND c.rastreio_status IS NOT NULL) AS em_movimento
+       FROM com_cte_documento c,
+            jsonb_array_elements_text(c.dados_json -> 'documentosNFe') AS j(chave)
+       WHERE j.chave IN (${inList})
+       ORDER BY j.chave, c.rastreio_status DESC NULLS LAST, c.data_emissao DESC`,
+    );
+  }
+
+  /** Atualiza os campos de transportadora do pedido (sincronização a partir do CT-e). */
+  async updatePedidoTransportadora(
+    pedidoId: string,
+    data: { nomeFrete?: string | null; frete?: number | null; categoriaFrete?: string | null },
+  ) {
+    return this.prisma.com_pedido.update({ where: { id: pedidoId }, data });
+  }
+
+  /** Pedidos com vínculo confirmado em status não-terminal (p/ o cron de transporte). */
+  async findPedidosComVinculoAtivos(limite: number): Promise<string[]> {
+    const rows = await this.prisma.com_pedido.findMany({
+      where: {
+        status: {
+          in: [
+            'Liberado',
+            'Faturado',
+            'Faturado parcialmente',
+            'Em Trânsito',
+            'Em Trânsito parcialmente',
+            'Entregue parcialmente',
+          ],
+        },
+        nfe_vinculos: { some: { confirmado: true } },
+      },
+      select: { id: true },
+      orderBy: { updated_at: 'asc' },
+      take: limite,
+    });
+    return rows.map((r) => r.id);
   }
 }

@@ -6,6 +6,7 @@ import { VinculacaoNfeController } from './vinculacao-nfe.controller';
 import { VinculacaoNfeService } from './vinculacao-nfe.service';
 import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
 import { AutoVinculoService } from './auto-vinculo.service';
+import { PedidoTransporteCron } from './pedido-transporte.cron';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
 import { FornecedorGrupoModule } from '../fornecedor-grupo/fornecedor-grupo.module';
 
@@ -19,6 +20,7 @@ import { FornecedorGrupoModule } from '../fornecedor-grupo/fornecedor-grupo.modu
     VinculacaoNfeService,
     VinculacaoNfeRepository,
     AutoVinculoService,
+    PedidoTransporteCron,
     // NotaFiscalRepository só depende de OpenQueryService (já disponível em OpenQueryModule).
     NotaFiscalRepository,
   ],
