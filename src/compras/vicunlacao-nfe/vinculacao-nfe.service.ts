@@ -192,7 +192,7 @@ export class VinculacaoNfeService {
     pedido: number,
     nfe: string,
     forCodigo?: number | null,
-    opts?: { itensCotacao?: ItemCotacao[]; refDescricao?: boolean },
+    opts?: { itensCotacao?: ItemCotacao[]; refDescricao?: boolean; forCodigosGrupo?: number[] },
   ) {
     // 1) XML da NF-e — Postgres PRIMEIRO.
     // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
@@ -287,6 +287,23 @@ export class VinculacaoNfeService {
 
     const indices = this.indexarCotacao(itensCotacao);
 
+    // Método 1 (PRIORITÁRIO): relacionamento VALIDADO produto-fornecedor da NF-e
+    // (PRODUTOS_FORNECEDOR_NFE). Mapa cProd(normalizado) -> PRO_CODIGO(s) já
+    // validados pelo usuário ao lançar a NF, considerando o GRUPO do fornecedor
+    // (matriz/filiais). É a fonte de verdade — tentado ANTES de referência/grupo/
+    // semântica. Sem for_codigo não há como consultar (a tabela é por fornecedor).
+    let validadoPorCprod = new Map<string, number[]>();
+    if (forCodigo != null) {
+      const forCodigosGrupo =
+        opts?.forCodigosGrupo ?? (await this.grupo.expandGrupo(forCodigo));
+      if (forCodigosGrupo.length) {
+        validadoPorCprod = await this.repo.findProdutoFornecedorNfeMap(
+          forCodigosGrupo,
+          itensXml.map((i) => i.cProd),
+        );
+      }
+    }
+
     // Fornecedor com "referência no final da descrição" (ex.: ARTEB): o match
     // também extrai o número do fim do xProd. Calculado 1x por pedido (pode vir
     // pronto do chamador via opts p/ evitar reconsulta por NF).
@@ -302,6 +319,7 @@ export class VinculacaoNfeService {
 
     for (const item of itensXml) {
       const match =
+        this.matchProdutoFornecedorNfe(item, validadoPorCprod, pedidoPorCodigo, itensCotacao) ??
         this.encontrarMatch(item, indices, refDesc) ??
         this.matchSemantico(item, itensCotacao, usados, precoPorCodigo);
       if (match) {
@@ -1797,6 +1815,63 @@ export class VinculacaoNfeService {
       }
     }
     return idx;
+  }
+
+  /**
+   * Método 1 (PRIORITÁRIO): casa o item do XML pelo relacionamento VALIDADO
+   * produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE). O cProd da NF resolve
+   * direto o PRO_CODIGO (nosso código interno) já validado pelo usuário ao lançar
+   * a NF — por isso NÃO aplica o guard de atributos (modelo/cor/lado): é a fonte
+   * de verdade.
+   *
+   * O PRO_CODIGO validado pode NÃO ser o item que está no pedido (ex.: validado
+   * sob outra unidade/descrição, ou de uma filial do grupo). Por isso só casa
+   * quando o código resolvido pertence ao pedido; senão devolve null e o motor
+   * cai nos próximos métodos (referência/grupo/semântica).
+   *
+   * O alvo devolvido reaproveita o ItemCotacao real quando existe (para o controle
+   * de `usados` do match semântico); quando não há item da cotação com aquele
+   * código, sintetiza um a partir do próprio item do pedido.
+   */
+  private matchProdutoFornecedorNfe(
+    item: ItemXml,
+    validadoPorCprod: Map<string, number[]>,
+    pedidoPorCodigo: Map<string, ItemPedido>,
+    itensCotacao: ItemCotacao[],
+  ): { item: ItemCotacao; campo: string; valor: string | null } | null {
+    const k = this.normRef(item.cProd);
+    if (!k) return null;
+    const candidatos = validadoPorCprod.get(k);
+    if (!candidatos?.length) return null;
+
+    // 1º PRO_CODIGO validado que pertence ao pedido (fork: senão, próximos métodos).
+    const proCodigo = candidatos.find((c) => pedidoPorCodigo.has(String(c)));
+    if (proCodigo == null) return null;
+
+    const ped = pedidoPorCodigo.get(String(proCodigo))!;
+    const alvo: ItemCotacao =
+      itensCotacao.find((it) => String(it.pro_codigo) === String(proCodigo)) ?? {
+        // Item sintético (não existe na cotação): _idx negativo nunca colide com os
+        // índices reais usados pelo controle de `usados` do match semântico.
+        _idx: -1,
+        _origem: 'pg',
+        pro_codigo: proCodigo,
+        pro_descricao: ped.pro_descricao,
+        mar_descricao: ped.mar_descricao,
+        referencia: ped.referencia,
+        ref_fabricante: null,
+        ref_fornecedor: null,
+        unidade: ped.unidade,
+        quantidade: ped.quantidade,
+        valor_unitario: ped.valor_unitario,
+        for_codigo: ped.for_codigo,
+      };
+
+    return {
+      item: alvo,
+      campo: 'produto_fornecedor_nfe',
+      valor: `${item.cProd ?? k} → ${proCodigo}`,
+    };
   }
 
   /** Tenta casar um item do XML contra as colunas da cotação (cProd e xProd[0]). */

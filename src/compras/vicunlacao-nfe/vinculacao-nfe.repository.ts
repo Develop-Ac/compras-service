@@ -204,6 +204,81 @@ export class VinculacaoNfeRepository {
     });
   }
 
+  /**
+   * Relacionamento VALIDADO produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE
+   * no ERP, EMPRESA=1): mapa cProd(normalizado) -> PRO_CODIGO(s) — nosso código
+   * interno — para um conjunto de fornecedores (o GRUPO do pedido: matriz/filiais)
+   * e os códigos de produto do fornecedor (cProd) presentes na NF.
+   *
+   * Esse vínculo é gravado/validado pelo usuário ao LANÇAR a NF; por isso é a
+   * fonte de verdade e a 1ª tentativa de casamento (antes de referência/grupo/
+   * semântica). Lê sempre AO VIVO no Firebird (OPENQUERY CONSULTA).
+   *
+   * Filtra por FOR_CODIGO do grupo e por cProd (forma crua e sem zeros à esquerda)
+   * para limitar o retorno aos itens da NF — evita varrer todo o catálogo do
+   * fornecedor. Um mesmo (FOR_CODIGO, cProd) pode ter mais de um PRO_CODIGO (por
+   * unidade/descrição na chave da tabela); por isso o valor é uma LISTA — o motor
+   * escolhe o que pertence ao pedido.
+   */
+  async findProdutoFornecedorNfeMap(
+    forCodigos: number[],
+    cprods: Array<string | null | undefined>,
+    empresa = 1,
+  ): Promise<Map<string, number[]>> {
+    const out = new Map<string, number[]>();
+
+    const fors = [
+      ...new Set(forCodigos.map((c) => Number(c)).filter((c) => Number.isFinite(c))),
+    ];
+    // Variações de cProd: crua (trim) e sem zeros à esquerda — o COD_PROD_FORNECEDOR
+    // pode estar gravado com ou sem zeros, igual ao cProd do XML.
+    const variantes = new Set<string>();
+    for (const c of cprods) {
+      const raw = String(c ?? '').trim();
+      if (!raw) continue;
+      variantes.add(raw);
+      variantes.add(raw.replace(/^0+(?=.)/, ''));
+    }
+    if (!fors.length || !variantes.size) return out;
+
+    const forList = fors.join(',');
+    const codList = [...variantes].map((c) => `'${this.fbLiteral(c)}'`).join(',');
+    const fbSql = `
+      SELECT FOR_CODIGO, COD_PROD_FORNECEDOR, PRO_CODIGO
+      FROM PRODUTOS_FORNECEDOR_NFE
+      WHERE EMPRESA = ${empresa}
+        AND FOR_CODIGO IN (${forList})
+        AND TRIM(COALESCE(COD_PROD_FORNECEDOR, '')) IN (${codList})
+    `;
+    const tsql = `SELECT * FROM OPENQUERY([${LINKED_SERVER}], '${this.fbLiteral(fbSql)}')`;
+
+    type Row = {
+      FOR_CODIGO: number | null;
+      COD_PROD_FORNECEDOR: string | null;
+      PRO_CODIGO: number | null;
+    };
+    let rows: Row[] = [];
+    try {
+      rows = await this.mssql.query<Row>(tsql, {}, { timeout: 120_000, allowZeroRows: true });
+    } catch (err: any) {
+      // Método 1 indisponível -> o motor cai nos próximos (referência/grupo/semântica).
+      this.logger.error(`[OPENQUERY produto-fornecedor-nfe] ${err?.message || err}`);
+      return out;
+    }
+
+    for (const r of rows) {
+      if (r.PRO_CODIGO == null) continue;
+      const k = this.normCprod(r.COD_PROD_FORNECEDOR);
+      if (!k) continue;
+      const cod = Number(r.PRO_CODIGO);
+      if (!Number.isFinite(cod)) continue;
+      const lista = out.get(k) ?? [];
+      if (!lista.includes(cod)) lista.push(cod);
+      out.set(k, lista);
+    }
+    return out;
+  }
+
   /** Retorna os ids dos pedidos (com_pedido) de uma cotação. */
   async findPedidoIds(pedido: number, forCodigo?: number | null): Promise<string[]> {
     const rows = await this.prisma.com_pedido.findMany({

@@ -173,7 +173,8 @@ de saldo quando a mesma NF é repartida entre vários pedidos.
 ### 3.2. Tabelas externas lidas (não alteradas)
 
 - **Firebird:** `NFE_DISTRIBUICAO`, `NF_ENTRADA_XML`, `PEDIDOS_COTACOES` (+ `ITENS`,
-  `PRODUTOS`, `MARCAS`).
+  `PRODUTOS`, `MARCAS`), `PRODUTOS_FORNECEDOR_NFE` (relacionamento validado
+  `COD_PROD_FORNECEDOR → PRO_CODIGO`, EMPRESA 1 — método 1 do casamento, §4.1).
 - **Postgres:** `com_pedido`, `com_pedido_itens`, `com_cotacao_itens_for`,
   `com_nfe_conciliacao` (XML íntegro + `status_erp`), `com_produto_fornecedor_referencia`
   (referência por fornecedor/grupo).
@@ -200,7 +201,35 @@ O saldo é **sempre recalculado a partir de confirmados** no momento de salvar
 
 Implementado em `vinculacao-nfe.service.ts`. Para cada `<prod>` do XML, tenta nesta ordem:
 
-### 4.1. Match por referência — `encontrarMatch`
+1. **Relacionamento validado** (`PRODUTOS_FORNECEDOR_NFE`) — §4.1;
+2. **Referência** / **referência grupo** (`encontrarMatch`) — §4.2;
+3. **Análise semântica** (`matchSemantico`) — §4.3.
+
+### 4.1. Relacionamento validado produto-fornecedor — `matchProdutoFornecedorNfe`
+
+**Primeira** tentativa (prioritária). Usa a tabela `PRODUTOS_FORNECEDOR_NFE` do ERP
+(Firebird, **EMPRESA = 1**), onde o sistema grava o vínculo `COD_PROD_FORNECEDOR`
+(= `cProd` da NF) → `PRO_CODIGO` (nosso código interno) **validado pelo usuário ao
+lançar a NF**. Por ser a fonte de verdade:
+
+- resolve o `cProd` **direto** no `PRO_CODIGO` (não passa pelas colunas de referência);
+- **não** aplica o guard de atributos (modelo/cor/lado) — a relação já foi validada;
+- considera o **GRUPO do fornecedor** (matriz/filiais, via `FornecedorGrupoService`),
+  igual à referência grupo;
+- lê **sempre ao vivo** no Firebird (`OPENQUERY CONSULTA`); filtra por `FOR_CODIGO IN
+  (grupo)` e pelo `cProd` (forma crua e sem zeros à esquerda) para não varrer o catálogo.
+
+O `PRO_CODIGO` validado pode **não** ser o que está no pedido (validado sob outra
+unidade/descrição, ou de uma filial). Por isso só casa quando o código **pertence ao
+pedido**; caso contrário, devolve `null` e o motor cai nos próximos métodos
+(referência → grupo → semântica). Sem `for_codigo` o método é pulado (a tabela é por
+fornecedor). Badge no frontend: **"Produto Fornecedor (NF-e)"** (`match_campo =
+'produto_fornecedor_nfe'`).
+
+> Uma falha no OPENQUERY desse método **não** quebra o vínculo: o mapa volta vazio e o
+> motor segue para referência/grupo/semântica.
+
+### 4.2. Match por referência — `encontrarMatch`
 
 Compara **chaves derivadas do XML** contra **três colunas de referência** da cotação:
 
@@ -217,7 +246,7 @@ Compara **chaves derivadas do XML** contra **três colunas de referência** da c
 (`000000000004904246` → `4904246`). Há ainda um *guard* que barra o match quando
 modelo/cor/lado/ano divergem, mesmo com a referência igual.
 
-### 4.2. Match semântico (fallback) — `matchSemantico`
+### 4.3. Match semântico (fallback) — `matchSemantico`
 
 Quando a referência não casa, compara a **descrição** por interseção de tokens
 significativos (`threshold = 0.7`, mínimo de 3 tokens em comum), reforçado por:
@@ -225,19 +254,19 @@ significativos (`threshold = 0.7`, mínimo de 3 tokens em comum), reforçado por
 - **valor unitário** próximo (preço do pedido × `vUnCom` da NF);
 - **ano** compatível (extraído da descrição, ex.: aplicações automotivas).
 
-### 4.3. Escopo por pedido/fornecedor
+### 4.4. Escopo por pedido/fornecedor
 
 O produto casado precisa **pertencer a este pedido** (`com_pedido_itens`). Um casamento
 contra a cotação (que tem itens de vários fornecedores) cujo produto não está no pedido
 vai para "XML sem vínculo", não conta como vinculado.
 
-### 4.4. Referência por fornecedor (grupo)
+### 4.5. Referência por fornecedor (grupo)
 
 A referência **exibida** dos itens do pedido prioriza a `com_produto_fornecedor_referencia`
 (do próprio fornecedor ou de um **relacionado do grupo** — matriz/filiais). Ver
 `FornecedorGrupoService` e a memória *Fornecedores relacionados (grupo)*.
 
-### 4.5. Parsing do XML
+### 4.6. Parsing do XML
 
 `parseItensNfe` extrai `cProd/xProd/qCom/vUnCom/vProd` de cada `<prod>` por regex
 (aceita prefixo de namespace). `sanitizeXml` trata: base64+gzip (`H4sI…`), BLOB gzip/zlib,

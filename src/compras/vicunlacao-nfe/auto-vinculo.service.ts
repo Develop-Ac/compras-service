@@ -243,6 +243,10 @@ export class AutoVinculoService {
     // "Referência no final da descrição" (ex.: ARTEB) — 1x por pedido.
     const refDescricao = await this.grupo.refNaDescricao(pedido.for_codigo);
 
+    // Grupo do fornecedor (matriz/filiais) p/ o método 1 (relacionamento validado
+    // PRODUTOS_FORNECEDOR_NFE) — expandido 1x por pedido e reusado em cada NF.
+    const forCodigosGrupo = await this.grupo.expandGrupo(pedido.for_codigo);
+
     for (const nf of candidatas) {
       const chave = String(nf.CHAVE_NFE ?? '').trim();
       if (!chave) continue;
@@ -262,7 +266,7 @@ export class AutoVinculoService {
           pedido.pedido_cotacao,
           chave,
           pedido.for_codigo,
-          { itensCotacao: itensCotacaoPedido, refDescricao },
+          { itensCotacao: itensCotacaoPedido, refDescricao, forCodigosGrupo },
         );
       } catch (err: any) {
         this.logger.warn(
