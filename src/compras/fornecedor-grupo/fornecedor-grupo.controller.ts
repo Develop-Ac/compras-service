@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FornecedorGrupoService } from './fornecedor-grupo.service';
-import { SalvarGrupoDto } from './fornecedor-grupo.dto';
+import { SalvarGrupoDto, SalvarParametrosDto } from './fornecedor-grupo.dto';
 
 @ApiTags('Compras - Fornecedores (grupos)')
 @Controller('fornecedor-grupo')
@@ -57,6 +57,31 @@ export class FornecedorGrupoController {
       .filter((x) => Number.isFinite(x));
     const data = await this.service.sugerirFiliais(n, ja);
     return { data, total: data.length };
+  }
+
+  @Get('parametros/:for_codigo')
+  @ApiOperation({ summary: 'Parâmetros de compra do fornecedor (lead time, revisão, pedido mínimo)' })
+  async parametros(@Param('for_codigo') forCodigo: string) {
+    const n = Number(forCodigo);
+    if (!Number.isFinite(n)) return { for_codigo: null, parametros: null };
+    return this.service.getParametros(n);
+  }
+
+  @Put('parametros')
+  @ApiOperation({ summary: 'Salva os parâmetros de compra (replica ao grupo por padrão)' })
+  async salvarParametros(@Body() dto: SalvarParametrosDto) {
+    const num = (v: any) => {
+      const n = Number(v);
+      return v == null || v === '' || !Number.isFinite(n) || n <= 0 ? null : n;
+    };
+    return this.service.salvarParametros({
+      forCodigo: Number(dto.for_codigo),
+      aplicarGrupo: dto.aplicar_grupo !== false,
+      lead_time_dias: num(dto.lead_time_dias),
+      tempo_revisao_dias: num(dto.tempo_revisao_dias),
+      pedido_minimo_valor: num(dto.pedido_minimo_valor),
+      updated_by: dto.updated_by?.trim() || null,
+    });
   }
 
   @Post()

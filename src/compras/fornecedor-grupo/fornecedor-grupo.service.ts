@@ -66,6 +66,65 @@ export class FornecedorGrupoService {
     return { ok: true };
   }
 
+  // ------------------------ Parâmetros de compra -----------------------------
+
+  /**
+   * Parâmetros de compra do fornecedor (aba "Parâmetros de Compra").
+   * Retorna o registro do próprio for_codigo; se ele não tiver e algum membro
+   * do grupo tiver, retorna o do membro (herança de leitura, com herdado_de).
+   */
+  async getParametros(forCodigo: number) {
+    const membros = await this.repo.expandGrupo(forCodigo);
+    const rows = await this.repo.parametrosDe(membros);
+    const proprio = rows.find((r) => r.for_codigo === forCodigo) ?? null;
+    const efetivo = proprio ?? rows[0] ?? null;
+    return {
+      for_codigo: forCodigo,
+      parametros: efetivo
+        ? {
+            lead_time_dias: efetivo.lead_time_dias,
+            tempo_revisao_dias: efetivo.tempo_revisao_dias,
+            pedido_minimo_valor:
+              efetivo.pedido_minimo_valor == null ? null : Number(efetivo.pedido_minimo_valor),
+            updated_at: efetivo.updated_at,
+            updated_by: efetivo.updated_by,
+            herdado_de: proprio ? null : efetivo.for_codigo,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Salva os parâmetros do fornecedor; com aplicarGrupo (padrão da tela),
+   * replica os mesmos valores para todos os membros do grupo (matriz e
+   * filiais), gravando o for_nome de cada um — o nome é a chave de casamento
+   * com o histórico de compra usado pela análise de estoque.
+   */
+  async salvarParametros(params: {
+    forCodigo: number;
+    aplicarGrupo: boolean;
+    lead_time_dias: number | null;
+    tempo_revisao_dias: number | null;
+    pedido_minimo_valor: number | null;
+    updated_by: string | null;
+  }) {
+    const alvos = params.aplicarGrupo
+      ? await this.repo.expandGrupo(params.forCodigo)
+      : [params.forCodigo];
+    const dados = await this.repo.fornecedoresPorCodigo(alvos);
+    const nomes = new Map<number, string>();
+    for (const d of dados) if (d.for_nome) nomes.set(d.for_codigo, d.for_nome);
+    const n = await this.repo.salvarParametros({
+      forCodigos: alvos,
+      nomes,
+      lead_time_dias: params.lead_time_dias,
+      tempo_revisao_dias: params.tempo_revisao_dias,
+      pedido_minimo_valor: params.pedido_minimo_valor,
+      updated_by: params.updated_by,
+    });
+    return { ok: true, fornecedores_atualizados: n };
+  }
+
   async removerGrupo(groupId: string) {
     await this.repo.removerGrupo(groupId);
     return { ok: true };

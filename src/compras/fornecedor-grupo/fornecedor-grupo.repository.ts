@@ -160,6 +160,59 @@ export class FornecedorGrupoRepository {
     return this.prisma.com_fornecedor_relacionamento.deleteMany({ where: { group_id: groupId } });
   }
 
+  // --------------------- Parâmetros de compra (PG) ---------------------------
+
+  /** Parâmetros de compra (lead time/revisão/pedido mínimo) por for_codigo. */
+  async parametrosDe(forCodigos: number[]) {
+    const lista = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))];
+    if (!lista.length) return [];
+    return this.prisma.com_fornecedor_parametros.findMany({
+      where: { for_codigo: { in: lista } },
+    });
+  }
+
+  /**
+   * Upsert dos parâmetros para uma lista de fornecedores (mesmos valores para
+   * todos — herança matriz→filiais do grupo). `nomes` alimenta for_nome, que é
+   * a chave de casamento com o histórico de compra usado pela análise.
+   */
+  async salvarParametros(params: {
+    forCodigos: number[];
+    nomes: Map<number, string>;
+    lead_time_dias: number | null;
+    tempo_revisao_dias: number | null;
+    pedido_minimo_valor: number | null;
+    updated_by: string | null;
+  }) {
+    const agora = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      for (const for_codigo of params.forCodigos) {
+        const for_nome = params.nomes.get(for_codigo) ?? String(for_codigo);
+        await tx.com_fornecedor_parametros.upsert({
+          where: { for_codigo },
+          update: {
+            for_nome,
+            lead_time_dias: params.lead_time_dias,
+            tempo_revisao_dias: params.tempo_revisao_dias,
+            pedido_minimo_valor: params.pedido_minimo_valor,
+            updated_at: agora,
+            updated_by: params.updated_by,
+          },
+          create: {
+            for_codigo,
+            for_nome,
+            lead_time_dias: params.lead_time_dias,
+            tempo_revisao_dias: params.tempo_revisao_dias,
+            pedido_minimo_valor: params.pedido_minimo_valor,
+            updated_at: agora,
+            updated_by: params.updated_by,
+          },
+        });
+      }
+    });
+    return params.forCodigos.length;
+  }
+
   // ------------------------- Catálogo de referências -------------------------
 
   /** Última referência NÃO-vazia por (fornecedor, codigo) para os conjuntos dados. */

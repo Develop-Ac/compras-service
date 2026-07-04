@@ -907,6 +907,24 @@ model com_fornecedores {
   for_nome   String @db.VarChar(255)
 }
 
+// Parâmetros de COMPRA por fornecedor (lead time, revisão, pedido mínimo).
+// Preenchidos na tela /compras/fornecedores (aba Parâmetros de Compra) — uma
+// linha por for_codigo (os membros do grupo herdam os valores no salvamento).
+// Lidos pelo analise-estoque-service: lead_time/revisão entram no cálculo do
+// mínimo; pedido_minimo_valor alimenta o alerta da tela Comprar Agora.
+// DDL aplicado MANUALMENTE (ver sql/2026-07-03_fornecedor_parametros.sql no
+// analise-estoque-service) — rodar apenas `npx prisma generate` aqui.
+model com_fornecedor_parametros {
+  id                  Int       @id @default(autoincrement())
+  for_codigo          Int       @unique(map: "com_fornecedor_parametros_for_codigo_key")
+  for_nome            String    @db.VarChar(255)
+  lead_time_dias      Int?
+  tempo_revisao_dias  Int?
+  pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_by          String?   @db.VarChar(100)
+}
+
 model com_fornecedor_relacionamento {
   id         String    @id @db.VarChar(191)
   group_id   String    @db.VarChar(100)
