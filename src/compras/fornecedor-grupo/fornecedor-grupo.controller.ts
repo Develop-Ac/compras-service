@@ -81,6 +81,7 @@ export class FornecedorGrupoController {
       tempo_revisao_dias: num(dto.tempo_revisao_dias),
       pedido_minimo_valor: num(dto.pedido_minimo_valor),
       pedido_minimo_qtd: num(dto.pedido_minimo_qtd),
+      trabalha_carteira: dto.trabalha_carteira === true,
       updated_by: dto.updated_by?.trim() || null,
     });
   }

@@ -807,12 +807,15 @@ export class VinculacaoNfeService {
     let itensParciais = 0;
     let itensNaoFaturados = 0;
     let itensDivergentes = 0;
+    let itensNaoAtendidos = 0;
     let valorPedidoTotal = 0;
 
     const itens = itensPedido.map((p) => {
       const cod = Number(p.pro_codigo);
       const quantidadePedido = num(p.quantidade);
       const valorPedido = num(p.valor_unitario);
+      const statusItem = p.status_item ?? null;
+      const naoAtendido = statusItem === 'nao_atendido';
       const agg = faturadoPorCodigo.get(cod);
       const quantidadeFaturada = agg?.quantidade_faturada ?? 0;
       const valorFaturado = agg?.valor_faturado ?? 0;
@@ -829,7 +832,9 @@ export class VinculacaoNfeService {
 
       // Status do produto (acumula quando há entrega parcial + faturamento).
       const statusProduto: string[] = [];
-      if (quantidadeFaturada === 0) {
+      if (naoAtendido) {
+        statusProduto.push('Não Atendido pelo Fornecedor');
+      } else if (quantidadeFaturada === 0) {
         statusProduto.push('Não faturado');
       } else if (qEntregue >= quantidadePedido) {
         statusProduto.push('Entregue');
@@ -848,8 +853,13 @@ export class VinculacaoNfeService {
       const valorDiverge =
         Math.abs(valorFaturado - valorPedido) >= TOLERANCIA_VALOR_DIVERGENTE;
 
-      let situacao: 'completo' | 'parcial' | 'nao_faturado' | 'divergente';
-      if (quantidadeFaturada === 0) {
+      let situacao: 'completo' | 'parcial' | 'nao_faturado' | 'divergente' | 'nao_atendido';
+      if (naoAtendido) {
+        // Item baixado pelo comprador (fornecedor sem carteira): "resolvido",
+        // não entra nos buckets de pendência nem trava o fechamento do pedido.
+        situacao = 'nao_atendido';
+        itensNaoAtendidos++;
+      } else if (quantidadeFaturada === 0) {
         situacao = 'nao_faturado';
         itensNaoFaturados++;
       } else if (valorDiverge || quantidadeFaturada > quantidadePedido) {
@@ -880,6 +890,8 @@ export class VinculacaoNfeService {
         diferenca_valor: valorFaturado - valorPedido,
         situacao,
         status_produto: statusProduto,
+        status_item: statusItem,
+        for_codigo: p.for_codigo == null ? null : Number(p.for_codigo),
         excede_saldo: agg?.excede_saldo ?? false,
         produtos_xml: agg ? [...agg.xmlProds.values()] : [],
         outros_pedidos: outrosPorCodigo.get(cod) ?? [],
@@ -906,10 +918,24 @@ export class VinculacaoNfeService {
       return total - consumido > 0.001;
     });
 
+    // Flag de CARTEIRA do fornecedor do pedido (backorder). Sem parâmetros
+    // cadastrados => false (comportamento padrão: comprador resolve as pendências).
+    let trabalhaCarteira = false;
+    if (pedido.for_codigo != null) {
+      try {
+        const par = await this.grupo.getParametros(Number(pedido.for_codigo));
+        trabalhaCarteira = par?.parametros?.trabalha_carteira ?? false;
+      } catch {
+        trabalhaCarteira = false;
+      }
+    }
+
     return {
       pedido_id: pedido.id,
+      for_codigo: pedido.for_codigo == null ? null : Number(pedido.for_codigo),
       status: pedido.status ?? '',
       ipi_no_valor: ipiNoValor,
+      trabalha_carteira: trabalhaCarteira,
       data_recebimento: pedido.data_recebimento
         ? pedido.data_recebimento.toISOString()
         : null,
@@ -919,12 +945,48 @@ export class VinculacaoNfeService {
         itens_parciais: itensParciais,
         itens_nao_faturados: itensNaoFaturados,
         itens_divergentes: itensDivergentes,
+        itens_nao_atendidos: itensNaoAtendidos,
         valor_pedido: valorPedidoTotal,
         valor_faturado: valorFaturadoTotal,
       },
       itens,
       itens_nf_sem_pedido: itensNfComSaldo,
     };
+  }
+
+  /**
+   * Marca (ou reverte) itens do pedido como "Não Atendido pelo Fornecedor"
+   * (fornecedor SEM carteira): o comprador baixa o que o fornecedor não vai
+   * atender. Itens não atendidos não travam o status nem marcam "produto já em
+   * pedido" na nova cotação. Recalcula o status e registra no histórico.
+   */
+  async marcarItensStatus(
+    pedidoId: string,
+    itens: Array<{ pro_codigo: number; for_codigo: number; status_item?: string | null }>,
+    usuario?: string | null,
+  ) {
+    const pedido = await this.repo.findPedidoStatus(pedidoId);
+    if (!pedido) {
+      throw new NotFoundException(`Pedido ${pedidoId} não encontrado.`);
+    }
+    const normalizados = itens.map((it) => ({
+      pro_codigo: Number(it.pro_codigo),
+      for_codigo: Number(it.for_codigo),
+      status_item: it.status_item === 'nao_atendido' ? 'nao_atendido' : null,
+    }));
+    const atualizados = await this.repo.setStatusItens(pedidoId, normalizados, usuario ?? null);
+    const status = await this.recalcularStatusPedido(pedidoId);
+
+    const nNaoAtendido = normalizados.filter((i) => i.status_item === 'nao_atendido').length;
+    await this.registrarLogPedido({
+      usuario: usuario ?? null,
+      acao: 'Itens não atendidos',
+      descricao:
+        `Atualizou ${atualizados} item(ns) do pedido ${pedidoId}: ` +
+        `${nNaoAtendido} marcado(s) como "Não Atendido pelo Fornecedor".`,
+    });
+
+    return { pedido_id: pedidoId, itens_atualizados: atualizados, status };
   }
 
   /**

@@ -88,6 +88,7 @@ export class FornecedorGrupoService {
               efetivo.pedido_minimo_valor == null ? null : Number(efetivo.pedido_minimo_valor),
             pedido_minimo_qtd:
               efetivo.pedido_minimo_qtd == null ? null : Number(efetivo.pedido_minimo_qtd),
+            trabalha_carteira: efetivo.trabalha_carteira ?? false,
             updated_at: efetivo.updated_at,
             updated_by: efetivo.updated_by,
             herdado_de: proprio ? null : efetivo.for_codigo,
@@ -109,6 +110,7 @@ export class FornecedorGrupoService {
     tempo_revisao_dias: number | null;
     pedido_minimo_valor: number | null;
     pedido_minimo_qtd: number | null;
+    trabalha_carteira: boolean;
     updated_by: string | null;
   }) {
     const alvos = params.aplicarGrupo
@@ -124,6 +126,7 @@ export class FornecedorGrupoService {
       tempo_revisao_dias: params.tempo_revisao_dias,
       pedido_minimo_valor: params.pedido_minimo_valor,
       pedido_minimo_qtd: params.pedido_minimo_qtd,
+      trabalha_carteira: params.trabalha_carteira,
       updated_by: params.updated_by,
     });
     return { ok: true, fornecedores_atualizados: n };

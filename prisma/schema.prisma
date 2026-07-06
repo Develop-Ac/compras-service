@@ -198,6 +198,13 @@ model com_pedido_itens {
   justificativa    String?    @db.VarChar(100)
   qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
   qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
+  // Status manual do item no fechamento do pedido. NULL = pendente/normal (fluxo
+  // atual). 'nao_atendido' = "Não Atendido pelo Fornecedor": item baixado pelo
+  // comprador (fornecedor SEM carteira) — deixa de travar o status do pedido e
+  // deixa de marcar "produto já em pedido" na nova cotação. DDL manual.
+  status_item      String?    @db.VarChar(30)
+  status_item_por  String?    @db.VarChar(120)
+  status_item_em   DateTime?
   pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
@@ -922,6 +929,11 @@ model com_fornecedor_parametros {
   tempo_revisao_dias  Int?
   pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
   pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
+  // Fornecedor trabalha com CARTEIRA (backorder): quando true, o item de pedido
+  // não faturado fica pendente indefinidamente (comportamento antigo). Quando
+  // false (padrão), após lançar a(s) NF o comprador resolve os itens que ficaram
+  // de fora, marcando-os como "Não Atendido pelo Fornecedor". DDL manual.
+  trabalha_carteira   Boolean   @default(false)
   updated_at          DateTime? @default(now()) @db.Timestamp(6)
   updated_by          String?   @db.VarChar(100)
 }

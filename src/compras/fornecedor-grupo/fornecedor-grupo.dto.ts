@@ -33,6 +33,15 @@ export class SalvarParametrosDto {
   @ApiPropertyOptional({ description: 'Pedido mínimo do fornecedor em QUANTIDADE (unidades); null = sem mínimo' })
   pedido_minimo_qtd?: number | null;
 
+  @ApiPropertyOptional({
+    description:
+      'Fornecedor trabalha com CARTEIRA (backorder). true = item não faturado ' +
+      'fica pendente indefinidamente. false (padrão) = comprador resolve os itens ' +
+      'que ficaram de fora após lançar a NF.',
+    default: false,
+  })
+  trabalha_carteira?: boolean;
+
   @ApiPropertyOptional({ description: 'Usuário que salvou (auditoria)' })
   updated_by?: string | null;
 }
