@@ -9,6 +9,7 @@ import * as path from 'path';
 import PDFDocument = require('pdfkit');
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
 import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
+import { GarantiaService } from '../../garantia/garantia.service';
 
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -35,6 +36,7 @@ export class PedidoService {
     private readonly repo: PedidoRepository,
     private readonly oq: OpenQueryService,
     private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
+    private readonly garantia: GarantiaService,
   ) {}
 
   /* ----------------------- Utils ----------------------- */
@@ -810,6 +812,14 @@ export class PedidoService {
           descricao: `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores`,
         }),
       });
+
+    // Recalcula o resumo de garantia de cada pedido gerado (fire-and-forget: não
+    // bloqueia nem falha a geração se o ERP/Stage estiver indisponível).
+    for (const p of result) {
+      this.garantia
+        .recalcularGarantiaPedido(p.id)
+        .catch(() => undefined);
+    }
 
     return {
       ok: true,

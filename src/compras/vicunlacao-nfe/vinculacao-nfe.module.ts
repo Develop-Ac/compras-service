@@ -9,12 +9,14 @@ import { AutoVinculoService } from './auto-vinculo.service';
 import { PedidoTransporteCron } from './pedido-transporte.cron';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
 import { FornecedorGrupoModule } from '../fornecedor-grupo/fornecedor-grupo.module';
+import { GarantiaModule } from '../garantia/garantia.module';
 
 @Module({
   // OpenQueryModule -> OpenQueryService (Firebird via MSSQL); OpenQueryHttpModule
   // exporta ConsultaOpenqueryRepository (fornecedor por for_codigo); PrismaModule -> Prisma.
   // FornecedorGrupoModule -> compartilhamento de referências entre fornecedores relacionados.
-  imports: [OpenQueryModule, OpenQueryHttpModule, PrismaModule, FornecedorGrupoModule],
+  // GarantiaModule -> recalcula o resumo de garantia do pedido ao salvar a NF.
+  imports: [OpenQueryModule, OpenQueryHttpModule, PrismaModule, FornecedorGrupoModule, GarantiaModule],
   controllers: [VinculacaoNfeController],
   providers: [
     VinculacaoNfeService,

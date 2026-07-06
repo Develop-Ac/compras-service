@@ -7,6 +7,7 @@ import {
 } from './vinculacao-nfe.repository';
 import { SalvarVinculoDto } from './dto/salvar-vinculo.dto';
 import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.service';
+import { GarantiaService } from '../garantia/garantia.service';
 
 /** Item extraído do XML da NF-e */
 export interface ItemXml {
@@ -96,6 +97,7 @@ export class VinculacaoNfeService {
   constructor(
     private readonly repo: VinculacaoNfeRepository,
     private readonly grupo: FornecedorGrupoService,
+    private readonly garantia: GarantiaService,
   ) {}
 
   /**
@@ -533,6 +535,9 @@ export class VinculacaoNfeService {
       acao: 'Vínculo NF-e',
       descricao: `Vinculou a NF-e ${dto.chave_nfe} ao pedido ${dto.pedido_id} (${nVinc} item(ns) vinculado(s)).`,
     });
+
+    // Mantém o resumo de garantia do pedido em dia (fire-and-forget).
+    this.garantia.recalcularGarantiaPedido(dto.pedido_id).catch(() => undefined);
 
     return { ...vinculo, totais, status };
   }

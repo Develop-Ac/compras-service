@@ -169,6 +169,14 @@ model com_pedido {
   // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
   // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
   status_anterior String?           @db.VarChar(50)
+  // Resumo de GARANTIA do fornecedor do pedido (contas a receber IC/RET em
+  // aberto). Persistido para a listagem/aviso; o detalhe é recomputado ao vivo
+  // na aba Garantia. Preenchido ao gerar/salvar o pedido e pelo seed. DDL manual.
+  tem_garantia           Boolean   @default(false)
+  garantia_qtd_titulos   Int?
+  garantia_qtd_produtos  Int?
+  garantia_valor         Decimal?  @db.Decimal(15, 2)
+  garantia_verificada_em DateTime?
   itens          com_pedido_itens[]
   nfe_vinculos   com_pedido_nfe_vinculo[]
 
