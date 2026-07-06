@@ -30,6 +30,9 @@ export class SalvarParametrosDto {
   @ApiPropertyOptional({ description: 'Pedido mínimo do fornecedor em R$; null = sem mínimo' })
   pedido_minimo_valor?: number | null;
 
+  @ApiPropertyOptional({ description: 'Pedido mínimo do fornecedor em QUANTIDADE (unidades); null = sem mínimo' })
+  pedido_minimo_qtd?: number | null;
+
   @ApiPropertyOptional({ description: 'Usuário que salvou (auditoria)' })
   updated_by?: string | null;
 }

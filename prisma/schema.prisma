@@ -921,6 +921,7 @@ model com_fornecedor_parametros {
   lead_time_dias      Int?
   tempo_revisao_dias  Int?
   pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
+  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
   updated_at          DateTime? @default(now()) @db.Timestamp(6)
   updated_by          String?   @db.VarChar(100)
 }

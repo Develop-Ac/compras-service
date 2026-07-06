@@ -80,6 +80,7 @@ export class FornecedorGrupoController {
       lead_time_dias: num(dto.lead_time_dias),
       tempo_revisao_dias: num(dto.tempo_revisao_dias),
       pedido_minimo_valor: num(dto.pedido_minimo_valor),
+      pedido_minimo_qtd: num(dto.pedido_minimo_qtd),
       updated_by: dto.updated_by?.trim() || null,
     });
   }

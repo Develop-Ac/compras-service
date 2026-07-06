@@ -182,6 +182,7 @@ export class FornecedorGrupoRepository {
     lead_time_dias: number | null;
     tempo_revisao_dias: number | null;
     pedido_minimo_valor: number | null;
+    pedido_minimo_qtd: number | null;
     updated_by: string | null;
   }) {
     const agora = new Date();
@@ -195,6 +196,7 @@ export class FornecedorGrupoRepository {
             lead_time_dias: params.lead_time_dias,
             tempo_revisao_dias: params.tempo_revisao_dias,
             pedido_minimo_valor: params.pedido_minimo_valor,
+            pedido_minimo_qtd: params.pedido_minimo_qtd,
             updated_at: agora,
             updated_by: params.updated_by,
           },
@@ -204,6 +206,7 @@ export class FornecedorGrupoRepository {
             lead_time_dias: params.lead_time_dias,
             tempo_revisao_dias: params.tempo_revisao_dias,
             pedido_minimo_valor: params.pedido_minimo_valor,
+            pedido_minimo_qtd: params.pedido_minimo_qtd,
             updated_at: agora,
             updated_by: params.updated_by,
           },
