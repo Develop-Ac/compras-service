@@ -194,25 +194,26 @@ export class CotacaoRepository {
   }
 
   /**
-   * Próximo número de pedido/cotação gerado NA INTRANET.
+   * Próximo número de COTAÇÃO gerado NA INTRANET.
    *
-   * Os pedidos criados aqui (tela Comprar Agora / Análise) vivem só na intranet
-   * por enquanto e NÃO podem colidir com os números que o ERP mãe gera na sua
-   * própria sequência (hoje na casa dos 4 mil, crescendo). Por isso a intranet
-   * usa uma FAIXA RESERVADA alta (>= INTRANET_PEDIDO_BASE, default 1.000.000):
-   * o ERP levaria séculos para chegar lá. O frontend exibe esses números como
-   * "I-N" (N = pedido_cotacao − base), deixando claro que são da intranet.
+   * As cotações criadas aqui (Comprar Agora / Análise / Produtos) vivem só na
+   * intranet por enquanto e NÃO podem colidir com os números que o ERP mãe gera
+   * na sua própria sequência (hoje na casa dos 4 mil, crescendo). Por isso a
+   * intranet numera A PARTIR DE INTRANET_COTACAO_BASE (100.000): a primeira
+   * cotação é 100.000, depois 100.001, 100.002… O ERP levaria ~2 séculos para
+   * chegar aos 100 mil. O frontend exibe esses números como "I-100000".
    *
    * Quando existir a API do ERP, ele passará a gerar o número real e devolvê-lo;
    * até lá esta faixa mantém os dois espaços de numeração separados.
    */
   async getNextIndice(): Promise<number> {
-    const base = Number(process.env.INTRANET_PEDIDO_BASE ?? 1_000_000);
+    const base = Number(process.env.INTRANET_COTACAO_BASE ?? 100_000);
     const result = await this.prisma.com_cotacao.findFirst({
       where: { pedido_cotacao: { gte: base } },
       orderBy: { pedido_cotacao: 'desc' },
       select: { pedido_cotacao: true },
     });
-    return (result?.pedido_cotacao ?? base) + 1;
+    // primeira cotação da intranet = base (100.000); depois incrementa de 1 em 1
+    return result?.pedido_cotacao != null ? result.pedido_cotacao + 1 : base;
   }
 }

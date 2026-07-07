@@ -46,15 +46,15 @@ export class PedidoService {
   }
 
   /**
-   * Rótulo do número do pedido/cotação. Os gerados na intranet ficam numa faixa
-   * reservada (>= INTRANET_PEDIDO_BASE) para não colidir com o ERP mãe e são
-   * exibidos como "I-N"; os vindos do ERP mantêm o número puro.
+   * Rótulo do número da cotação/pedido. Os gerados na intranet ficam numa faixa
+   * reservada (>= INTRANET_COTACAO_BASE, default 100.000) para não colidir com o
+   * ERP mãe e são exibidos como "I-100000"; os vindos do ERP mantêm o número puro.
    */
   private fmtPedidoCotacao(n: number | null | undefined): string {
-    const base = Number(process.env.INTRANET_PEDIDO_BASE ?? 1_000_000);
+    const base = Number(process.env.INTRANET_COTACAO_BASE ?? 100_000);
     const num = Number(n);
     if (!Number.isFinite(num)) return String(n ?? '');
-    return num >= base ? `I-${num - base}` : String(num);
+    return num >= base ? `I-${num}` : String(num);
   }
 
   private resolveLogoPath(): string | null {
