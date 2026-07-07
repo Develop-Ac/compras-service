@@ -32,6 +32,8 @@ RUN npm ci
 COPY prisma ./prisma
 COPY tsconfig*.json nest-cli.json* ./
 COPY src ./src
+# Scripts operacionais (.js) — não entram no build, mas seguem para o runtime.
+COPY scripts ./scripts
 
 # Prisma + build
 RUN npx prisma generate
@@ -62,6 +64,9 @@ ENV PORT=8000
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/dist ./dist
+# Scripts operacionais (seeds/backfills) rodados via `node scripts/<x>.js`
+# dentro do container (ex.: docker exec ... node scripts/seed-garantia-pedidos.js --apply).
+COPY --from=build /app/scripts ./scripts
 
 EXPOSE 8000
 CMD ["sh","-c","npx prisma migrate deploy || true; node dist/main.js"]

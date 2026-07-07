@@ -5,24 +5,28 @@
  * 'Cancelado' e, para cada um, consulta a garantia do fornecedor (contas a
  * receber IC/RET em aberto) e grava o resumo em com_pedido (tem_garantia +
  * contagens + valor + data). Reaproveita a MESMA lógica do serviço
- * (GarantiaService.recalcularGarantiaPedido) via um contexto Nest mínimo
- * (só o GarantiaModule — sem crons/rabbit).
+ * (GarantiaService.recalcularGarantiaPedido) carregando o módulo COMPILADO do
+ * dist/ num contexto Nest mínimo (só o GarantiaModule — sem crons/rabbit).
+ *
+ * Roda com Node puro (NÃO usa ts-node) — igual aos demais scripts do projeto.
+ * Pré-requisitos:
+ *   1) `npm run build` (precisa existir dist/compras/garantia/*.js).
+ *   2) DDL sql/2026-07-06_pedido_garantia_resumo.sql aplicado + `npx prisma generate`
+ *      (necessário só para o modo --apply, que grava as colunas novas).
  *
  * Uso (a partir de compras-service/):
- *   npx ts-node -r tsconfig-paths/register scripts/seed-garantia-pedidos.ts          # dry-run
- *   npx ts-node -r tsconfig-paths/register scripts/seed-garantia-pedidos.ts --apply  # grava
- *
- * Pré-requisito: aplicar o DDL sql/2026-07-06_pedido_garantia_resumo.sql e rodar
- * `npx prisma generate` antes (as colunas de garantia precisam existir).
+ *   node scripts/seed-garantia-pedidos.js                 # dry-run (não grava)
+ *   node scripts/seed-garantia-pedidos.js --apply         # grava o resumo
+ *   node scripts/seed-garantia-pedidos.js --limit 20      # limita a 20 pedidos
  */
-import 'dotenv/config';
-import { NestFactory } from '@nestjs/core';
-import { PrismaClient } from '@prisma/client';
-import { GarantiaModule } from '../src/compras/garantia/garantia.module';
-import { GarantiaService } from '../src/compras/garantia/garantia.service';
+try { require('dotenv').config(); } catch (_) { /* dotenv opcional (em prod as envs já vêm do container) */ }
+
+const { NestFactory } = require('@nestjs/core');
+const { PrismaClient } = require('@prisma/client');
+const { GarantiaModule } = require('../dist/compras/garantia/garantia.module');
+const { GarantiaService } = require('../dist/compras/garantia/garantia.service');
 
 const APPLY = process.argv.includes('--apply');
-// --limit N: processa no máximo N pedidos (útil p/ teste). 0 = sem limite.
 const LIMIT = (() => {
   const i = process.argv.indexOf('--limit');
   const n = i >= 0 ? Number(process.argv[i + 1]) : 0;
@@ -31,7 +35,7 @@ const LIMIT = (() => {
 // Status que NÃO devem ser reprocessados (pedido já fechado/cancelado).
 const EXCLUIR = ['Entregue', 'Entregue parcialmente', 'Cancelado'];
 
-async function main() {
+(async () => {
   const prisma = new PrismaClient();
   const app = await NestFactory.createApplicationContext(GarantiaModule, {
     logger: ['error', 'warn'],
@@ -48,7 +52,7 @@ async function main() {
 
     console.log(
       `${pedidos.length} pedido(s) a verificar (status ∉ ${EXCLUIR.join(' / ')}). ` +
-        `Modo: ${APPLY ? 'APLICAR (grava)' : 'DRY-RUN (não grava)'}.`,
+        `Modo: ${APPLY ? 'APLICAR (grava)' : 'DRY-RUN (nao grava)'}.`,
     );
 
     let processados = 0;
@@ -57,22 +61,22 @@ async function main() {
 
     for (const p of pedidos) {
       try {
-        // DRY: só consulta (não persiste). APPLY: consulta e grava o resumo.
+        // DRY: so consulta (nao persiste). APPLY: consulta e grava o resumo.
         const resumo = APPLY
           ? await garantia.recalcularGarantiaPedido(p.id)
           : await garantia.garantiasDoPedido(p.id);
         processados++;
-        if (resumo?.tem_garantia) {
+        if (resumo && resumo.tem_garantia) {
           comGarantia++;
           console.log(
             `${APPLY ? 'GRAVADO ' : 'GARANTIA'} · cot ${p.pedido_cotacao} / for ${p.for_codigo} ` +
-              `(${p.status}): ${resumo.totais.titulos} título(s), ${resumo.totais.produtos} produto(s), ` +
-              `R$ ${resumo.totais.valor_total.toFixed(2)}`,
+              `(${p.status}): ${resumo.totais.titulos} titulo(s), ${resumo.totais.produtos} produto(s), ` +
+              `R$ ${Number(resumo.totais.valor_total || 0).toFixed(2)}`,
           );
         }
-      } catch (err: any) {
+      } catch (err) {
         erros++;
-        console.warn(`ERRO · pedido ${p.id}: ${err?.message || err}`);
+        console.warn(`ERRO · pedido ${p.id}: ${(err && err.message) || err}`);
       }
     }
 
@@ -85,9 +89,7 @@ async function main() {
     await app.close();
     await prisma.$disconnect();
   }
-}
-
-main().catch((e) => {
+})().catch((e) => {
   console.error(e);
   process.exit(1);
 });
