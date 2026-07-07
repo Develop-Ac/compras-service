@@ -45,6 +45,18 @@ export class PedidoService {
     return v.length > max ? v.slice(0, max - 1) + '…' : v;
   }
 
+  /**
+   * Rótulo do número do pedido/cotação. Os gerados na intranet ficam numa faixa
+   * reservada (>= INTRANET_PEDIDO_BASE) para não colidir com o ERP mãe e são
+   * exibidos como "I-N"; os vindos do ERP mantêm o número puro.
+   */
+  private fmtPedidoCotacao(n: number | null | undefined): string {
+    const base = Number(process.env.INTRANET_PEDIDO_BASE ?? 1_000_000);
+    const num = Number(n);
+    if (!Number.isFinite(num)) return String(n ?? '');
+    return num >= base ? `I-${num - base}` : String(num);
+  }
+
   private resolveLogoPath(): string | null {
     // 1) Permitir override por ENV (robusto em Docker/prod)
     const envPath = process.env.PUBLIC_LOGO_PATH;
@@ -393,7 +405,7 @@ export class PedidoService {
     }
 
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.set('Content-Disposition', `attachment; filename="pedido_${pedido.pedido_cotacao}.xlsx"`);
+    res.set('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
 
     await workbook.xlsx.write(res as unknown as import('stream').Writable);
     res.end();
@@ -426,7 +438,7 @@ export class PedidoService {
     res.set('Content-Type', 'application/pdf');
     res.set(
       'Content-Disposition',
-      `inline; filename="pedido_${pedido.pedido_cotacao}_id_${pedido.id}.pdf"`,
+      `inline; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}_id_${pedido.id}.pdf"`,
     );
     doc.pipe(res as unknown as NodeJS.WritableStream);
 
@@ -456,7 +468,7 @@ export class PedidoService {
     }
 
     // Título alinhado ao centro da logo
-    const title = `AC Acessórios - Pedido de Compra - ${pedido.pedido_cotacao}`;
+    const title = `AC Acessórios - Pedido de Compra - ${this.fmtPedidoCotacao(pedido.pedido_cotacao)}`;
     doc.font('Helvetica-Bold').fontSize(14).fillColor('#000');
     const titleLineH = doc.currentLineHeight();
     const logoCenterY = logoY + logoH / 2;

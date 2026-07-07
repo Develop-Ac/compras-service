@@ -193,11 +193,26 @@ export class CotacaoRepository {
     return { message: 'Cotação deletada com sucesso' };
   }
 
+  /**
+   * Próximo número de pedido/cotação gerado NA INTRANET.
+   *
+   * Os pedidos criados aqui (tela Comprar Agora / Análise) vivem só na intranet
+   * por enquanto e NÃO podem colidir com os números que o ERP mãe gera na sua
+   * própria sequência (hoje na casa dos 4 mil, crescendo). Por isso a intranet
+   * usa uma FAIXA RESERVADA alta (>= INTRANET_PEDIDO_BASE, default 1.000.000):
+   * o ERP levaria séculos para chegar lá. O frontend exibe esses números como
+   * "I-N" (N = pedido_cotacao − base), deixando claro que são da intranet.
+   *
+   * Quando existir a API do ERP, ele passará a gerar o número real e devolvê-lo;
+   * até lá esta faixa mantém os dois espaços de numeração separados.
+   */
   async getNextIndice(): Promise<number> {
+    const base = Number(process.env.INTRANET_PEDIDO_BASE ?? 1_000_000);
     const result = await this.prisma.com_cotacao.findFirst({
-      orderBy: { indice: 'desc' },
-      select: { indice: true },
+      where: { pedido_cotacao: { gte: base } },
+      orderBy: { pedido_cotacao: 'desc' },
+      select: { pedido_cotacao: true },
     });
-    return (result?.indice ?? 0) + 1;
-  }  
+    return (result?.pedido_cotacao ?? base) + 1;
+  }
 }
