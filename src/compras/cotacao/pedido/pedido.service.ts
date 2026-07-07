@@ -302,6 +302,9 @@ export class PedidoService {
       status: string;
       produtos_cod: string;
       produtos_desc: string;
+      tem_garantia: boolean;
+      garantia_qtd_titulos: number | null;
+      garantia_qtd_produtos: number | null;
     }> = [];
     for (const p of pedidos) {
       let totalQtd = 0;
@@ -351,6 +354,9 @@ export class PedidoService {
         total_valor_fmt: `\u00A0${fmtBR.format(totalValor)}`,
         produtos_cod,
         produtos_desc,
+        tem_garantia: !!p.tem_garantia,
+        garantia_qtd_titulos: p.garantia_qtd_titulos ?? null,
+        garantia_qtd_produtos: p.garantia_qtd_produtos ?? null,
       });
     }
     return results;
