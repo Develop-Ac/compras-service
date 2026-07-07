@@ -21,6 +21,6 @@ export class GarantiaController {
   @ApiResponse({ status: 200, description: 'Garantias listadas (tem_garantia indica se há pendências).' })
   @ApiResponse({ status: 404, description: 'Pedido não encontrado.' })
   async garantiasDoPedido(@Param('pedidoId') pedidoId: string) {
-    return this.service.garantiasDoPedido(pedidoId);
+    return this.service.garantiasDoPedido(pedidoId, { matchItensPedido: true });
   }
 }

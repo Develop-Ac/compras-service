@@ -32,6 +32,15 @@ export interface TituloGarantiaDto {
   produtos: ProdutoGarantia[];
 }
 
+/** Item do pedido que casa com um produto em garantia (por código ou similar). */
+export interface ItemPedidoGarantiaDto {
+  pro_codigo: number;
+  /** TT_CODIGO(s) da garantia casada — 'IC' e/ou 'RET'. */
+  tt_codigos: string[];
+  /** Como casou: 'codigo' (mesmo pro_codigo) ou 'grupo' (produto similar). */
+  via: 'codigo' | 'grupo';
+}
+
 @Injectable()
 export class GarantiaService {
   private readonly logger = new Logger(GarantiaService.name);
@@ -51,7 +60,7 @@ export class GarantiaService {
    * (tudo no SQL Server); apenas os itens da NFS vêm do Firebird (OPENQUERY),
    * pois não têm cópia em Stage.
    */
-  async garantiasDoPedido(pedidoId: string) {
+  async garantiasDoPedido(pedidoId: string, opts?: { matchItensPedido?: boolean }) {
     const pedido = await this.prisma.com_pedido.findUnique({
       where: { id: pedidoId },
       select: { id: true, for_codigo: true },
@@ -66,6 +75,7 @@ export class GarantiaService {
       tem_garantia: false,
       totais: { titulos: 0, produtos: 0, valor_total: 0 },
       titulos: [] as TituloGarantiaDto[],
+      itens_pedido_garantia: [] as ItemPedidoGarantiaDto[],
     };
     if (pedido.for_codigo == null) return vazio;
 
@@ -138,13 +148,88 @@ export class GarantiaService {
     const totalProdutos = out.reduce((acc, t) => acc + t.produtos.length, 0);
     const valorTotal = out.reduce((acc, t) => acc + (t.valor ?? 0), 0);
 
+    // Casa os PRODUTOS EM GARANTIA com os ITENS DO PEDIDO (só quando pedido pela
+    // tela — evita custo no seed/persistência). Casa por pro_codigo OU por
+    // "produto similar" (mesmo group_id em com_relacionamento_itens, o mesmo
+    // agrupamento usado pela análise de estoque).
+    const itensPedidoGarantia = opts?.matchItensPedido
+      ? await this.matchItensPedidoComGarantia(pedidoId, out)
+      : [];
+
     return {
       pedido_id: pedidoId,
       for_codigo: pedido.for_codigo,
       tem_garantia: out.length > 0,
       totais: { titulos: out.length, produtos: totalProdutos, valor_total: valorTotal },
       titulos: out,
+      itens_pedido_garantia: itensPedidoGarantia,
     };
+  }
+
+  /**
+   * Dado os títulos de garantia (com seus produtos), devolve os itens do pedido
+   * que "casam" com algum produto em garantia — por pro_codigo direto OU por
+   * produto SIMILAR (mesmo group_id em com_relacionamento_itens, o agrupamento
+   * mantido pela análise de estoque em /similar/*). Cada casamento traz o(s)
+   * TT_CODIGO(s) (IC/RET) para a tag na lista de itens do pedido.
+   */
+  private async matchItensPedidoComGarantia(
+    pedidoId: string,
+    titulos: TituloGarantiaDto[],
+  ): Promise<ItemPedidoGarantiaDto[]> {
+    // pro_codigo (garantia) -> conjunto de TT_CODIGO
+    const ttPorProdGarantia = new Map<string, Set<string>>();
+    for (const t of titulos) {
+      for (const p of t.produtos) {
+        const k = String(p.pro_codigo);
+        if (!ttPorProdGarantia.has(k)) ttPorProdGarantia.set(k, new Set());
+        ttPorProdGarantia.get(k)!.add(t.tt_codigo);
+      }
+    }
+    if (!ttPorProdGarantia.size) return [];
+
+    // Itens do pedido.
+    const itens = await this.prisma.com_pedido_itens.findMany({
+      where: { pedido_id: pedidoId },
+      select: { pro_codigo: true },
+    });
+    const codigosPedido = [...new Set(itens.map((i) => String(i.pro_codigo)))];
+    if (!codigosPedido.length) return [];
+
+    // group_id dos produtos de garantia e dos itens do pedido (similares).
+    const codigosGarantia = [...ttPorProdGarantia.keys()];
+    const rels = await this.prisma.com_relacionamento_itens.findMany({
+      where: { pro_codigo: { in: [...new Set([...codigosGarantia, ...codigosPedido])] } },
+      select: { pro_codigo: true, group_id: true },
+    });
+    const groupPorProd = new Map<string, string>();
+    for (const r of rels) groupPorProd.set(String(r.pro_codigo), r.group_id);
+
+    // group_id (garantia) -> conjunto de TT_CODIGO (une os tts dos produtos do grupo).
+    const ttPorGrupoGarantia = new Map<string, Set<string>>();
+    for (const [cod, tts] of ttPorProdGarantia) {
+      const g = groupPorProd.get(cod);
+      if (!g) continue;
+      if (!ttPorGrupoGarantia.has(g)) ttPorGrupoGarantia.set(g, new Set());
+      for (const tt of tts) ttPorGrupoGarantia.get(g)!.add(tt);
+    }
+
+    const out: ItemPedidoGarantiaDto[] = [];
+    for (const cod of codigosPedido) {
+      // 1) casamento direto por pro_codigo
+      const direto = ttPorProdGarantia.get(cod);
+      if (direto && direto.size) {
+        out.push({ pro_codigo: Number(cod), tt_codigos: [...direto], via: 'codigo' });
+        continue;
+      }
+      // 2) casamento por produto similar (mesmo group_id)
+      const g = groupPorProd.get(cod);
+      const ttsGrupo = g ? ttPorGrupoGarantia.get(g) : undefined;
+      if (ttsGrupo && ttsGrupo.size) {
+        out.push({ pro_codigo: Number(cod), tt_codigos: [...ttsGrupo], via: 'grupo' });
+      }
+    }
+    return out;
   }
 
   /**
