@@ -51,7 +51,8 @@ export class PedidoService {
    * ERP mãe e são exibidos como "I-100000"; os vindos do ERP mantêm o número puro.
    */
   private fmtPedidoCotacao(n: number | null | undefined): string {
-    const base = Number(process.env.INTRANET_COTACAO_BASE ?? 100_000);
+    // Robusto ao formato do env ("100.000" -> 100000; ponto é decimal em JS)
+    const base = Number(String(process.env.INTRANET_COTACAO_BASE ?? '').replace(/[^\d]/g, '')) || 100_000;
     const num = Number(n);
     if (!Number.isFinite(num)) return String(n ?? '');
     return num >= base ? `I-${num}` : String(num);
