@@ -207,7 +207,9 @@ export class CotacaoRepository {
    * até lá esta faixa mantém os dois espaços de numeração separados.
    */
   async getNextIndice(): Promise<number> {
-    const base = Number(process.env.INTRANET_COTACAO_BASE ?? 100_000);
+    // Robusto ao formato do env: "100000", "100.000" e "100 000" viram 100000
+    // (Number("100.000") sozinho daria 100 — ponto é decimal em JS).
+    const base = Number(String(process.env.INTRANET_COTACAO_BASE ?? '').replace(/[^\d]/g, '')) || 100_000;
     const result = await this.prisma.com_cotacao.findFirst({
       where: { pedido_cotacao: { gte: base } },
       orderBy: { pedido_cotacao: 'desc' },
