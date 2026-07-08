@@ -14,6 +14,10 @@ export interface ProdutoGarantia {
   pro_descricao: string;
   quantidade: number | null;
   unitario: number | null;
+  /** true se este produto (ou um similar do mesmo grupo) está no pedido. */
+  no_pedido?: boolean;
+  /** Como casou com o pedido: 'codigo' (mesmo pro_codigo) ou 'grupo' (similar). */
+  no_pedido_via?: 'codigo' | 'grupo' | null;
 }
 
 export interface TituloGarantiaDto {
@@ -212,6 +216,35 @@ export class GarantiaService {
       if (!g) continue;
       if (!ttPorGrupoGarantia.has(g)) ttPorGrupoGarantia.set(g, new Set());
       for (const tt of tts) ttPorGrupoGarantia.get(g)!.add(tt);
+    }
+
+    // Marca, no sentido inverso, cada PRODUTO EM GARANTIA se ele já está no
+    // pedido — direto (mesmo pro_codigo) ou por similar (mesmo group_id). Assim
+    // a lista da aba Garantia mostra o que já entrou no pedido e o que ficou de
+    // fora. Mutação in-place em `titulos` (é o mesmo `out` devolvido na resposta).
+    const codigosPedidoSet = new Set(codigosPedido);
+    const gruposPedido = new Set<string>();
+    for (const cod of codigosPedido) {
+      const g = groupPorProd.get(cod);
+      if (g) gruposPedido.add(g);
+    }
+    for (const t of titulos) {
+      for (const p of t.produtos) {
+        const cod = String(p.pro_codigo);
+        if (codigosPedidoSet.has(cod)) {
+          p.no_pedido = true;
+          p.no_pedido_via = 'codigo';
+        } else {
+          const g = groupPorProd.get(cod);
+          if (g && gruposPedido.has(g)) {
+            p.no_pedido = true;
+            p.no_pedido_via = 'grupo';
+          } else {
+            p.no_pedido = false;
+            p.no_pedido_via = null;
+          }
+        }
+      }
     }
 
     const out: ItemPedidoGarantiaDto[] = [];
