@@ -155,16 +155,13 @@ export class PedidoService {
     if (pedido  !== null && pedido.itens  !== null) {
       pedido.itens = await Promise.all(
         pedido.itens.map(async (item): Promise<any> => {
-          const valores = await this.getValoresGerenciais(item.pro_codigo);
-
           const itemFormatado = await this.cotacaoSyncService.fetchProdutosInfoOneShot([item.pro_codigo], 3);
 
           return {
             ...item,
-            ...valores,
             min: (item as any).qtd_sugerida_min ?? null,
             max: (item as any).qtd_sugerida_max ?? null,
-            pro_descricao: (valores?.pro_descricao ?? item.pro_descricao ?? ''),
+            pro_descricao: (item.pro_descricao ?? ''),
             custo_fabrica: itemFormatado.get(item.pro_codigo)?.custo_fabrica ?? null,
           };
         })
@@ -176,75 +173,6 @@ export class PedidoService {
     return pedido;
   }
 
-
-  private async getValoresGerenciais(pro_codigo: number) {
-    const innerFbQuery = `
-      SELECT
-        nfsi.pro_codigo,
-        pro.pro_descricao,
-
-        SUM(
-          CASE
-            WHEN nfs.dt_emissao >= (CURRENT_DATE - 365)
-            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
-            ELSE 0
-          END
-        ) / 12.0 AS media_mensal_12m,
-
-        SUM(
-          CASE
-            WHEN nfs.dt_emissao >= (CURRENT_DATE - 90)
-            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
-            ELSE 0
-          END
-        ) / 3.0 AS media_mensal_3m,
-
-        SUM(
-          CASE
-            WHEN nfs.dt_emissao >= (CURRENT_DATE - 365)
-            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
-            ELSE 0
-          END
-        ) AS total_qtd_12m,
-
-        SUM(
-          CASE
-            WHEN nfs.dt_emissao >= (CURRENT_DATE - 90)
-            THEN (COALESCE(nfsi.quantidade, 0) - COALESCE(nfsi.qtde_devolvida, 0))
-            ELSE 0
-          END
-        ) AS total_qtd_3m
-
-      FROM nf_saida nfs
-      JOIN nfs_itens nfsi
-        ON nfs.empresa = nfsi.empresa
-      AND nfs.nfs     = nfsi.nfs
-      LEFT JOIN produtos pro
-        ON pro.empresa    = nfs.empresa
-      AND pro.pro_codigo = nfsi.pro_codigo
-
-      WHERE nfs.empresa = 3
-        AND nfs.opf_codigo IN ('1','3','4','5','6','7','8')
-        AND nfs.dt_cancelamento IS NULL
-        AND nfs.dt_emissao >= (CURRENT_DATE - 365)
-        AND nfsi.pro_codigo = ${Number(pro_codigo)}
-
-      GROUP BY nfsi.pro_codigo, pro.pro_descricao
-    `.trim();
-
-    const escaped = innerFbQuery.replace(/'/g, "''");
-
-    const sql = `SELECT * FROM OPENQUERY(CONSULTA, '${escaped}')`;
-
-    return await this.oq.queryOne<{
-      pro_codigo: number;
-      pro_descricao: string | null;
-      media_mensal_12m: number | null;
-      media_mensal_3m: number | null;
-      total_qtd_12m: number | null;
-      total_qtd_3m: number | null;
-    }>(sql, {}, { timeout: 60000 });
-  }
 
   /** Monta a OPENQUERY corretamente (sem alias no SELECT externo) */
   private buildFornecedorOpenQuery(forCodigo: number): string {
