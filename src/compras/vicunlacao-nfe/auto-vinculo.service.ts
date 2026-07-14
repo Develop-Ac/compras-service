@@ -5,6 +5,7 @@ import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
 import { ConsultaOpenqueryRepository } from '../cotacao/openquery/openquery.repository';
 import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.service';
+import { AvisosClientService } from '../avisos/avisos-client.service';
 
 /** Cobertura mínima (pro_codigos distintos vinculados / nº itens do pedido) p/ sugerir. */
 const COBERTURA_MINIMA = 0.3;
@@ -48,6 +49,7 @@ export class AutoVinculoService {
     private readonly notasRepo: NotaFiscalRepository,
     private readonly fornecedorRepo: ConsultaOpenqueryRepository,
     private readonly grupo: FornecedorGrupoService,
+    private readonly avisos: AvisosClientService,
   ) {}
 
   /** Evita varreduras sobrepostas quando o intervalo é curto (ex.: a cada minuto). */
@@ -109,7 +111,19 @@ export class AutoVinculoService {
 
     for (const pedido of pedidosProcessar) {
       try {
-        sugestoesCriadas += await this.processarPedido(pedido, notas);
+        const n = await this.processarPedido(pedido, notas);
+        sugestoesCriadas += n;
+        // Notifica quem tem acesso à tela quando surgem sugestões NOVAS p/ o pedido.
+        // Idempotência/anti-spam por evento_chave (ref) + cooldown da regra.
+        if (n > 0) {
+          this.avisos.emitirSistema({
+            chave: 'compras.nfe.sugestao',
+            ref: pedido.id,
+            tela: '/compras/notaFiscal/notaFiscal',
+            variaveis: { pedido: pedido.pedido_cotacao, count: n },
+            link: `/compras/cotacao/pedido?pedido=${pedido.pedido_cotacao}`,
+          });
+        }
       } catch (err: any) {
         this.logger.error(
           `Erro ao processar pedido ${pedido.id} (cotação ${pedido.pedido_cotacao}): ${err?.message || err}`,

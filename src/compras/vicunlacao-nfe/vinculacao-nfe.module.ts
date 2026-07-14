@@ -10,6 +10,7 @@ import { PedidoTransporteCron } from './pedido-transporte.cron';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
 import { FornecedorGrupoModule } from '../fornecedor-grupo/fornecedor-grupo.module';
 import { GarantiaModule } from '../garantia/garantia.module';
+import { AvisosClientService } from '../avisos/avisos-client.service';
 
 @Module({
   // OpenQueryModule -> OpenQueryService (Firebird via MSSQL); OpenQueryHttpModule
@@ -25,6 +26,7 @@ import { GarantiaModule } from '../garantia/garantia.module';
     PedidoTransporteCron,
     // NotaFiscalRepository só depende de OpenQueryService (já disponível em OpenQueryModule).
     NotaFiscalRepository,
+    AvisosClientService,
   ],
   exports: [VinculacaoNfeService, AutoVinculoService],
 })
