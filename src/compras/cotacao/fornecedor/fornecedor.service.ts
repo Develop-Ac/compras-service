@@ -235,6 +235,10 @@ export class FornecedorService {
     >();
     for (const pedido of pedidoItens) {
       for (const item of pedido.itens ?? []) {
+        // Itens marcados "Não Atendido pelo Fornecedor" (fornecedor SEM carteira)
+        // foram baixados pelo comprador: não devem marcar "produto já em pedido"
+        // na nova cotação — o produto volta a ser cotável livremente.
+        if (item.status_item === 'nao_atendido') continue;
         const code = Number(item.pro_codigo);
         if (!pedidoPorProCodigo.has(code)) {
           pedidoPorProCodigo.set(code, {

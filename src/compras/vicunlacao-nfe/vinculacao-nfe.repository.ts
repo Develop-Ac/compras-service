@@ -774,7 +774,13 @@ export class VinculacaoNfeRepository {
   async findPedidoParaConferencia(pedidoId: string) {
     return this.prisma.com_pedido.findUnique({
       where: { id: pedidoId },
-      select: { id: true, status: true, data_recebimento: true, ipi_no_valor: true },
+      select: {
+        id: true,
+        for_codigo: true,
+        status: true,
+        data_recebimento: true,
+        ipi_no_valor: true,
+      },
     });
   }
 
@@ -799,9 +805,44 @@ export class VinculacaoNfeRepository {
         pro_descricao: true,
         quantidade: true,
         valor_unitario: true,
+        for_codigo: true,
+        status_item: true,
       },
       orderBy: [{ pro_codigo: 'asc' }],
     });
+  }
+
+  /**
+   * Marca (ou reverte) o status manual de itens do pedido no fechamento
+   * (status_item = 'nao_atendido' | null). Chaveia por (pedido_id, pro_codigo,
+   * for_codigo) — a mesma chave única de com_pedido_itens. Grava auditoria.
+   */
+  async setStatusItens(
+    pedidoId: string,
+    itens: Array<{ pro_codigo: number; for_codigo: number; status_item: string | null }>,
+    usuario: string | null,
+  ): Promise<number> {
+    if (!itens.length) return 0;
+    const agora = new Date();
+    let n = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const it of itens) {
+        const r = await tx.com_pedido_itens.updateMany({
+          where: {
+            pedido_id: pedidoId,
+            pro_codigo: it.pro_codigo,
+            for_codigo: it.for_codigo,
+          },
+          data: {
+            status_item: it.status_item,
+            status_item_por: it.status_item ? usuario : null,
+            status_item_em: it.status_item ? agora : null,
+          },
+        });
+        n += r.count;
+      }
+    });
+    return n;
   }
 
   /**
@@ -920,10 +961,18 @@ export class VinculacaoNfeRepository {
     });
   }
 
-  /** pro_codigo distintos dos itens do pedido (com_pedido_itens). */
+  /**
+   * pro_codigo distintos dos itens do pedido (com_pedido_itens), EXCLUINDO os
+   * marcados "Não Atendido pelo Fornecedor" (status_item='nao_atendido') — que
+   * foram baixados pelo comprador e não devem exigir cobertura no cálculo de
+   * status (o pedido pode fechar sem eles).
+   */
   async findProCodigosDoPedido(pedidoId: string): Promise<number[]> {
     const rows = await this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: pedidoId },
+      where: {
+        pedido_id: pedidoId,
+        OR: [{ status_item: null }, { status_item: { not: 'nao_atendido' } }],
+      },
       select: { pro_codigo: true },
     });
     return rows.map((r) => r.pro_codigo);

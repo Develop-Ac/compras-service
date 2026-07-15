@@ -154,26 +154,25 @@ model com_cotacao_itens_for {
 }
 
 model com_pedido {
-  id                     String                   @id @default(cuid())
-  pedido_cotacao         Int
-  for_codigo             Int
-  created_at             DateTime                 @default(now())
-  updated_at             DateTime                 @updatedAt
-  frete                  Decimal?                 @db.Decimal(10, 2)
-  prazo                  String?                  @db.VarChar(100)
-  nomeFrete              String?                  @db.VarChar(255)
-  status                 String?                  @db.VarChar(50)
-  categoriaFrete         String?                  @db.VarChar(255)
-  data_recebimento       DateTime?
-  ipi_no_valor           Boolean                  @default(false)
-  status_anterior        String?                  @db.VarChar(50)
-  tem_garantia           Boolean                  @default(false)
-  garantia_qtd_titulos   Int?
-  garantia_qtd_produtos  Int?
-  garantia_valor         Decimal?                 @db.Decimal(15, 2)
-  garantia_verificada_em DateTime?                @db.Timestamp(6)
-  itens                  com_pedido_itens[]
-  nfe_vinculos           com_pedido_nfe_vinculo[]
+  id             String             @id @default(cuid())
+  pedido_cotacao Int
+  for_codigo     Int
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+  frete          Decimal?           @db.Decimal(10, 2)
+  prazo          String?            @db.VarChar(100)
+  nomeFrete      String?            @db.VarChar(255)
+  status         String?            @db.VarChar(50)
+  categoriaFrete String?            @db.VarChar(255)
+  data_recebimento DateTime?
+  // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
+  // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
+  ipi_no_valor   Boolean            @default(false)
+  // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
+  // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
+  status_anterior String?           @db.VarChar(50)
+  itens          com_pedido_itens[]
+  nfe_vinculos   com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
@@ -201,9 +200,6 @@ model com_pedido_itens {
   justificativa    String?    @db.VarChar(100)
   qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
   qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
-  status_item      String?    @db.VarChar(30)
-  status_item_por  String?    @db.VarChar(120)
-  status_item_em   DateTime?  @db.Timestamp(6)
   pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
@@ -967,6 +963,30 @@ model com_fornecedores {
   id         Int    @id @default(autoincrement())
   for_codigo Int
   for_nome   String @db.VarChar(255)
+}
+
+// Parâmetros de COMPRA por fornecedor (lead time, revisão, pedido mínimo).
+// Preenchidos na tela /compras/fornecedores (aba Parâmetros de Compra) — uma
+// linha por for_codigo (os membros do grupo herdam os valores no salvamento).
+// Lidos pelo analise-estoque-service: lead_time/revisão entram no cálculo do
+// mínimo; pedido_minimo_valor alimenta o alerta da tela Comprar Agora.
+// DDL aplicado MANUALMENTE (ver sql/2026-07-03_fornecedor_parametros.sql no
+// analise-estoque-service) — rodar apenas `npx prisma generate` aqui.
+model com_fornecedor_parametros {
+  id                  Int       @id @default(autoincrement())
+  for_codigo          Int       @unique(map: "com_fornecedor_parametros_for_codigo_key")
+  for_nome            String    @db.VarChar(255)
+  lead_time_dias      Int?
+  tempo_revisao_dias  Int?
+  pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
+  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
+  // Fornecedor trabalha com CARTEIRA (backorder): quando true, o item de pedido
+  // não faturado fica pendente indefinidamente (comportamento antigo). Quando
+  // false (padrão), após lançar a(s) NF o comprador resolve os itens que ficaram
+  // de fora, marcando-os como "Não Atendido pelo Fornecedor". DDL manual.
+  trabalha_carteira   Boolean   @default(false)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_by          String?   @db.VarChar(100)
 }
 
 model com_fornecedor_relacionamento {

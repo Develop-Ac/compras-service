@@ -9,6 +9,7 @@ import * as path from 'path';
 import PDFDocument = require('pdfkit');
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
 import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
+import { GarantiaService } from '../../garantia/garantia.service';
 
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -35,12 +36,26 @@ export class PedidoService {
     private readonly repo: PedidoRepository,
     private readonly oq: OpenQueryService,
     private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
+    private readonly garantia: GarantiaService,
   ) {}
 
   /* ----------------------- Utils ----------------------- */
   private clampText(s: string | null | undefined, max: number) {
     const v = (s ?? '').trim();
     return v.length > max ? v.slice(0, max - 1) + '…' : v;
+  }
+
+  /**
+   * Rótulo do número da cotação/pedido. Os gerados na intranet ficam numa faixa
+   * reservada (>= INTRANET_COTACAO_BASE, default 100.000) para não colidir com o
+   * ERP mãe e são exibidos como "I-100000"; os vindos do ERP mantêm o número puro.
+   */
+  private fmtPedidoCotacao(n: number | null | undefined): string {
+    // Robusto ao formato do env ("100.000" -> 100000; ponto é decimal em JS)
+    const base = Number(String(process.env.INTRANET_COTACAO_BASE ?? '').replace(/[^\d]/g, '')) || 100_000;
+    const num = Number(n);
+    if (!Number.isFinite(num)) return String(n ?? '');
+    return num >= base ? `I-${num}` : String(num);
   }
 
   private resolveLogoPath(): string | null {
@@ -228,6 +243,9 @@ export class PedidoService {
       status: string;
       produtos_cod: string;
       produtos_desc: string;
+      tem_garantia: boolean;
+      garantia_qtd_titulos: number | null;
+      garantia_qtd_produtos: number | null;
     }> = [];
     for (const p of pedidos) {
       let totalQtd = 0;
@@ -277,6 +295,9 @@ export class PedidoService {
         total_valor_fmt: `\u00A0${fmtBR.format(totalValor)}`,
         produtos_cod,
         produtos_desc,
+        tem_garantia: !!p.tem_garantia,
+        garantia_qtd_titulos: p.garantia_qtd_titulos ?? null,
+        garantia_qtd_produtos: p.garantia_qtd_produtos ?? null,
       });
     }
     return results;
@@ -313,7 +334,7 @@ export class PedidoService {
     }
 
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.set('Content-Disposition', `attachment; filename="pedido_${pedido.pedido_cotacao}.xlsx"`);
+    res.set('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
 
     await workbook.xlsx.write(res as unknown as import('stream').Writable);
     res.end();
@@ -346,7 +367,7 @@ export class PedidoService {
     res.set('Content-Type', 'application/pdf');
     res.set(
       'Content-Disposition',
-      `inline; filename="pedido_${pedido.pedido_cotacao}_id_${pedido.id}.pdf"`,
+      `inline; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}_id_${pedido.id}.pdf"`,
     );
     doc.pipe(res as unknown as NodeJS.WritableStream);
 
@@ -376,7 +397,7 @@ export class PedidoService {
     }
 
     // Título alinhado ao centro da logo
-    const title = `AC Acessórios - Pedido de Compra - ${pedido.pedido_cotacao}`;
+    const title = `AC Acessórios - Pedido de Compra - ${this.fmtPedidoCotacao(pedido.pedido_cotacao)}`;
     doc.font('Helvetica-Bold').fontSize(14).fillColor('#000');
     const titleLineH = doc.currentLineHeight();
     const logoCenterY = logoY + logoH / 2;
@@ -738,6 +759,14 @@ export class PedidoService {
           descricao: `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores`,
         }),
       });
+
+    // Recalcula o resumo de garantia de cada pedido gerado (fire-and-forget: não
+    // bloqueia nem falha a geração se o ERP/Stage estiver indisponível).
+    for (const p of result) {
+      this.garantia
+        .recalcularGarantiaPedido(p.id)
+        .catch(() => undefined);
+    }
 
     return {
       ok: true,
