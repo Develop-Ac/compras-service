@@ -1294,20 +1294,6 @@ model com_fiscal_regra {
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
 }
 
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model com_fornecedor_parametros {
-  id                  Int       @id @default(autoincrement())
-  for_codigo          Int       @unique
-  for_nome            String    @db.VarChar(255)
-  lead_time_dias      Int?
-  tempo_revisao_dias  Int?
-  pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
-  updated_at          DateTime? @default(now()) @db.Timestamp(6)
-  updated_by          String?   @db.VarChar(100)
-  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
-  trabalha_carteira   Boolean   @default(false)
-}
-
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model com_marca_linha {
   mar_descricao String    @id @db.VarChar(200)
