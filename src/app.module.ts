@@ -17,6 +17,7 @@ import { RabbitMqModule } from './compras/cotacao/job/rabbitmq.module';
 import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
+import { GarantiaModule } from './compras/garantia/garantia.module';
 
 @Module({
 imports: [
@@ -35,6 +36,7 @@ imports: [
     RabbitMqModule,
     VinculacaoNfeModule,
     FornecedorGrupoModule,
+    GarantiaModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -48,7 +50,8 @@ imports: [
       { path: 'compras', module: ItensModule },
       { path: 'compras', module: PedidosLogsModule },
       { path: 'compras', module: VinculacaoNfeModule },
-      { path: 'compras', module: FornecedorGrupoModule }
+      { path: 'compras', module: FornecedorGrupoModule },
+      { path: 'compras', module: GarantiaModule }
     ]),
   ],
   controllers: [AppController],

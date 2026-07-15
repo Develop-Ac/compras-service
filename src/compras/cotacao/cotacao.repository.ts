@@ -193,11 +193,29 @@ export class CotacaoRepository {
     return { message: 'Cotação deletada com sucesso' };
   }
 
+  /**
+   * Próximo número de COTAÇÃO gerado NA INTRANET.
+   *
+   * As cotações criadas aqui (Comprar Agora / Análise / Produtos) vivem só na
+   * intranet por enquanto e NÃO podem colidir com os números que o ERP mãe gera
+   * na sua própria sequência (hoje na casa dos 4 mil, crescendo). Por isso a
+   * intranet numera A PARTIR DE INTRANET_COTACAO_BASE (100.000): a primeira
+   * cotação é 100.000, depois 100.001, 100.002… O ERP levaria ~2 séculos para
+   * chegar aos 100 mil. O frontend exibe esses números como "I-100000".
+   *
+   * Quando existir a API do ERP, ele passará a gerar o número real e devolvê-lo;
+   * até lá esta faixa mantém os dois espaços de numeração separados.
+   */
   async getNextIndice(): Promise<number> {
+    // Robusto ao formato do env: "100000", "100.000" e "100 000" viram 100000
+    // (Number("100.000") sozinho daria 100 — ponto é decimal em JS).
+    const base = Number(String(process.env.INTRANET_COTACAO_BASE ?? '').replace(/[^\d]/g, '')) || 100_000;
     const result = await this.prisma.com_cotacao.findFirst({
-      orderBy: { indice: 'desc' },
-      select: { indice: true },
+      where: { pedido_cotacao: { gte: base } },
+      orderBy: { pedido_cotacao: 'desc' },
+      select: { pedido_cotacao: true },
     });
-    return (result?.indice ?? 0) + 1;
-  }  
+    // primeira cotação da intranet = base (100.000); depois incrementa de 1 em 1
+    return result?.pedido_cotacao != null ? result.pedido_cotacao + 1 : base;
+  }
 }

@@ -14,6 +14,7 @@ import { VincularNfeDto } from './dto/vincular-nfe.dto';
 import { SalvarVinculoDto } from './dto/salvar-vinculo.dto';
 import { NfLancadaDto } from './dto/nf-lancada.dto';
 import { VincularItemDto } from './dto/vincular-item.dto';
+import { MarcarItensStatusDto } from './dto/marcar-itens-status.dto';
 
 @ApiTags('Compras - Vinculação NF-e')
 @Controller('vinculacao-nfe')
@@ -193,6 +194,29 @@ export class VinculacaoNfeController {
     @Body() body: { ipi_no_valor?: boolean },
   ) {
     return this.service.setIpiNoValor(pedidoId, Boolean(body?.ipi_no_valor));
+  }
+
+  // POST /compras/vinculacao-nfe/pedido/:pedidoId/itens-status  (body: { itens, usuario })
+  // IMPORTANTE: rota específica declarada ANTES de /:vinculoId para não ser sombreada.
+  @Post('pedido/:pedidoId/itens-status')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Marca/reverte itens do pedido como "Não Atendido pelo Fornecedor"',
+    description:
+      'Para fornecedores SEM carteira: após lançar a(s) NF, o comprador baixa os ' +
+      'itens que ficaram de fora (status_item=\'nao_atendido\') ou os mantém pendentes ' +
+      '(status_item=null). Itens não atendidos deixam de travar o status do pedido e ' +
+      'deixam de marcar "produto já em pedido" na nova cotação. Recalcula o status.',
+  })
+  @ApiParam({ name: 'pedidoId', description: 'com_pedido.id' })
+  @ApiBody({ type: MarcarItensStatusDto })
+  @ApiResponse({ status: 200, description: 'Itens atualizados e status recalculado.' })
+  @ApiResponse({ status: 404, description: 'Pedido não encontrado.' })
+  async marcarItensStatus(
+    @Param('pedidoId') pedidoId: string,
+    @Body() body: MarcarItensStatusDto,
+  ) {
+    return this.service.marcarItensStatus(pedidoId, body?.itens ?? [], body?.usuario ?? null);
   }
 
   // POST /compras/vinculacao-nfe/resumo  (body: { chaves: string[] })
