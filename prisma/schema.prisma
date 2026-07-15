@@ -154,25 +154,32 @@ model com_cotacao_itens_for {
 }
 
 model com_pedido {
-  id             String             @id @default(cuid())
-  pedido_cotacao Int
-  for_codigo     Int
-  created_at     DateTime           @default(now())
-  updated_at     DateTime           @updatedAt
-  frete          Decimal?           @db.Decimal(10, 2)
-  prazo          String?            @db.VarChar(100)
-  nomeFrete      String?            @db.VarChar(255)
-  status         String?            @db.VarChar(50)
-  categoriaFrete String?            @db.VarChar(255)
-  data_recebimento DateTime?
+  id                     String                   @id @default(cuid())
+  pedido_cotacao         Int
+  for_codigo             Int
+  created_at             DateTime                 @default(now())
+  updated_at             DateTime                 @updatedAt
+  frete                  Decimal?                 @db.Decimal(10, 2)
+  prazo                  String?                  @db.VarChar(100)
+  nomeFrete              String?                  @db.VarChar(255)
+  status                 String?                  @db.VarChar(50)
+  categoriaFrete         String?                  @db.VarChar(255)
+  data_recebimento       DateTime?
   // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
   // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
-  ipi_no_valor   Boolean            @default(false)
+  ipi_no_valor           Boolean                  @default(false)
   // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
   // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
-  status_anterior String?           @db.VarChar(50)
-  itens          com_pedido_itens[]
-  nfe_vinculos   com_pedido_nfe_vinculo[]
+  status_anterior        String?                  @db.VarChar(50)
+  // Resumo de garantia persistido pelo recálculo (GarantiaService): flag,
+  // contagens de títulos/produtos, valor total e data da última verificação.
+  tem_garantia           Boolean                  @default(false)
+  garantia_qtd_titulos   Int?
+  garantia_qtd_produtos  Int?
+  garantia_valor         Decimal?                 @db.Decimal(15, 2)
+  garantia_verificada_em DateTime?
+  itens                  com_pedido_itens[]
+  nfe_vinculos           com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
@@ -200,6 +207,11 @@ model com_pedido_itens {
   justificativa    String?    @db.VarChar(100)
   qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
   qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
+  // Status manual do item no fechamento ('nao_atendido' | null) + auditoria
+  // (quem marcou e quando). Itens 'nao_atendido' não travam o status do pedido.
+  status_item      String?    @db.VarChar(50)
+  status_item_por  String?    @db.VarChar(100)
+  status_item_em   DateTime?
   pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
