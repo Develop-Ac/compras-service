@@ -27,6 +27,7 @@ type NextFornecedor = {
     emissao: string | null;
     valor_unitario: string | null;
     ref_fornecedor: string | null;
+    observacao: string | null;
   }>;
 };
 
@@ -199,7 +200,7 @@ export class CotacaoSyncService {
       ? data
       : [];
 
-    console.log(fornecedores[0].itens)
+    // console.log(fornecedores[0].itens)
 
     // 2) Persistir local (espelho)
     if (fornecedores.length > 0) {
@@ -218,7 +219,8 @@ export class CotacaoSyncService {
           quantidade: this.parseIntStrict('QUANTIDADE', i.quantidade),
           qtd_sugerida: Number(i.qtd_sugerida),
           valor_unitario: this.parseMoney('VALOR_UNITARIO', i.valor_unitario) ?? null,
-          ref_fornecedor: i.ref_fornecedor
+          ref_fornecedor: i.ref_fornecedor ?? null,
+          observacao: i.observacao ?? null,
         })),
       }));
       await this.repo.upsertFornecedorComItensTx(mapped);
@@ -235,6 +237,8 @@ export class CotacaoSyncService {
     );
 
     const erpMap = await this.fetchProdutosInfoOneShot(allCodes, 3);
+
+    console.log(fornecedoresLocal[0].itens)
 
     return fornecedoresLocal.map((f) => ({
       ...f,

@@ -25,11 +25,13 @@ export class CotacaoSyncRepository {
         qtd_sugerida: number;
         valor_unitario: number | null;
         dt_ultima_compra?: Date | null;
+        observacao: string | null;
       }>;
     }>,
   ) {
     if (!fornecedores?.length) return;
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(
+      async (tx) => {
       for (const forn of fornecedores) {
         await tx.com_cotacao_for.upsert({
           where: {
@@ -64,37 +66,40 @@ export class CotacaoSyncRepository {
             quantidade: i.quantidade,
             qtd_sugerida: i.qtd_sugerida,
             valor_unitario: i.valor_unitario,
+            observacao: i.observacao,
             dt_ultima_compra: i.dt_ultima_compra,
           }));
           if (inputs.length) { await tx.com_cotacao_itens_for.createMany({ data: inputs }); }
 
-        for (const item of forn.itens) {
-          const id = cuid();
-          await tx.com_produto_fornecedor_referencia.create({
-            data: {
-              id: id,
+          const agora = new Date(
+            new Intl.DateTimeFormat("sv-SE", {
+              timeZone: "America/Cuiaba",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }).format(new Date()).replace(" ", "T"),
+          );
+
+          const referenciaInputs: Prisma.com_produto_fornecedor_referenciaCreateManyInput[] =
+            forn.itens.map((item) => ({
+              id: cuid(),
               fornecedor: forn.for_codigo,
               referencia: item.ref_fornecedor ?? "",
               descricao: item.pro_descricao,
               codigo: item.pro_codigo.toString(),
-              data: new Date(
-                new Intl.DateTimeFormat("sv-SE", {
-                  timeZone: "America/Cuiaba",
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                }).format(new Date()).replace(" ", "T"),
-              ),
-            },
-          });
-        }
-          
+              data: agora,
+            }));
+          if (referenciaInputs.length) {
+            await tx.com_produto_fornecedor_referencia.createMany({ data: referenciaInputs });
+          }
         }
       }
-    });
+      },
+      { maxWait: 15000, timeout: 60000 },
+    );
   }
 
   async listFornecedoresLocal(pedido_cotacao: number) {
