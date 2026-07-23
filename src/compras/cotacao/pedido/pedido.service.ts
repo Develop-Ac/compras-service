@@ -722,6 +722,7 @@ export class PedidoService {
           for_codigo,
           quantidade: new Prisma.Decimal(i.quantidade as any),
           justificativa: i.justificativa ?? null,
+          quantidade_real: true
         }));
 
         await this.repo.createManyItens(tx, data);

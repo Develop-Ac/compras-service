@@ -79,6 +79,7 @@ model ofi_checklists {
   assinatura_retirada_base64   String?
   dataHoraEntrega              DateTime?
   assinaturaRetiradaBase64     String?
+  clientId                     String?                  @unique
   ofi_checklists_avarias       ofi_checklists_avarias[]
   ofi_checklists_fotos         ofi_checklists_fotos[]
   ofi_checklists_items         ofi_checklists_items[]
@@ -146,39 +147,33 @@ model com_cotacao_itens_for {
   valor_unitario Float?
   qtd_sugerida   Int?            @default(0)
   ref_fornecedor String?         @db.VarChar(255)
+  observacao     String?         @db.VarChar(255)
   cotacao        com_cotacao_for @relation(fields: [pedido_cotacao, for_codigo], references: [pedido_cotacao, for_codigo], onDelete: Cascade)
 
   @@index([pedido_cotacao, for_codigo])
 }
 
 model com_pedido {
-  id             String             @id @default(cuid())
-  pedido_cotacao Int
-  for_codigo     Int
-  created_at     DateTime           @default(now())
-  updated_at     DateTime           @updatedAt
-  frete          Decimal?           @db.Decimal(10, 2)
-  prazo          String?            @db.VarChar(100)
-  nomeFrete      String?            @db.VarChar(255)
-  status         String?            @db.VarChar(50)
-  categoriaFrete String?            @db.VarChar(255)
-  data_recebimento DateTime?
-  // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
-  // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
-  ipi_no_valor   Boolean            @default(false)
-  // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
-  // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
-  status_anterior String?           @db.VarChar(50)
-  // Resumo de GARANTIA do fornecedor do pedido (contas a receber IC/RET em
-  // aberto). Persistido para a listagem/aviso; o detalhe é recomputado ao vivo
-  // na aba Garantia. Preenchido ao gerar/salvar o pedido e pelo seed. DDL manual.
-  tem_garantia           Boolean   @default(false)
+  id                     String                   @id @default(cuid())
+  pedido_cotacao         Int
+  for_codigo             Int
+  created_at             DateTime                 @default(now())
+  updated_at             DateTime                 @updatedAt
+  frete                  Decimal?                 @db.Decimal(10, 2)
+  prazo                  String?                  @db.VarChar(100)
+  nomeFrete              String?                  @db.VarChar(255)
+  status                 String?                  @db.VarChar(50)
+  categoriaFrete         String?                  @db.VarChar(255)
+  data_recebimento       DateTime?
+  ipi_no_valor           Boolean                  @default(false)
+  status_anterior        String?                  @db.VarChar(50)
+  tem_garantia           Boolean                  @default(false)
   garantia_qtd_titulos   Int?
   garantia_qtd_produtos  Int?
-  garantia_valor         Decimal?  @db.Decimal(15, 2)
-  garantia_verificada_em DateTime?
-  itens          com_pedido_itens[]
-  nfe_vinculos   com_pedido_nfe_vinculo[]
+  garantia_valor         Decimal?                 @db.Decimal(15, 2)
+  garantia_verificada_em DateTime?                @db.Timestamp(6)
+  itens                  com_pedido_itens[]
+  nfe_vinculos           com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
@@ -206,13 +201,10 @@ model com_pedido_itens {
   justificativa    String?    @db.VarChar(100)
   qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
   qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
-  // Status manual do item no fechamento do pedido. NULL = pendente/normal (fluxo
-  // atual). 'nao_atendido' = "Não Atendido pelo Fornecedor": item baixado pelo
-  // comprador (fornecedor SEM carteira) — deixa de travar o status do pedido e
-  // deixa de marcar "produto já em pedido" na nova cotação. DDL manual.
   status_item      String?    @db.VarChar(30)
   status_item_por  String?    @db.VarChar(120)
-  status_item_em   DateTime?
+  status_item_em   DateTime?  @db.Timestamp(6)
+  quantidade_real  Boolean    @default(false)
   pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
@@ -221,24 +213,22 @@ model com_pedido_itens {
 }
 
 model com_pedido_nfe_vinculo {
-  id              String     @id @default(cuid())
-  pedido_id       String     // FK com_pedido.id (contexto da tela do pedido)
-  pedido_cotacao  Int
-  for_codigo      Int?
-  chave_nfe       String     @db.VarChar(44)
-  emitente        String?
-  data_emissao    DateTime?
-  valor_total     Decimal?   @db.Decimal(15, 2)
-  usuario         String?    @db.VarChar(120)
-  confirmado      Boolean    @default(true)
-  // Sugestão automática rejeitada pelo usuário: a linha é mantida (não apagada)
-  // para que o auto-vínculo NÃO sugira a mesma NF p/ este pedido de novo.
-  rejeitado       Boolean    @default(false)
-  origem_vinculo  String     @default("manual") @db.VarChar(20)
-  created_at      DateTime   @default(now())
-  updated_at      DateTime   @updatedAt
-  pedido          com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
-  itens           com_pedido_nfe_vinculo_item[]
+  id             String                        @id @default(cuid())
+  pedido_id      String
+  pedido_cotacao Int
+  for_codigo     Int?
+  chave_nfe      String                        @db.VarChar(44)
+  emitente       String?
+  data_emissao   DateTime?
+  valor_total    Decimal?                      @db.Decimal(15, 2)
+  usuario        String?                       @db.VarChar(120)
+  created_at     DateTime                      @default(now())
+  updated_at     DateTime                      @updatedAt
+  confirmado     Boolean                       @default(true)
+  origem_vinculo String                        @default("manual") @db.VarChar(20)
+  rejeitado      Boolean                       @default(false)
+  pedido         com_pedido                    @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  itens          com_pedido_nfe_vinculo_item[]
 
   @@unique([pedido_id, chave_nfe])
   @@index([pedido_id])
@@ -246,29 +236,25 @@ model com_pedido_nfe_vinculo {
 }
 
 model com_pedido_nfe_vinculo_item {
-  id                  String   @id @default(cuid())
-  vinculo_id          String
-  tipo                String   @db.VarChar(20) // 'vinculado' | 'xml_sem_vinculo' | 'pedido_sem_vinculo'
-  // dados do lado XML
-  produto_xml         String?
-  cprod_xml           String?
-  quantidade_xml      Decimal? @db.Decimal(15, 4)
-  vuncom_xml          Decimal? @db.Decimal(15, 4)
-  // dados do lado pedido/cotação
-  pro_codigo          Int?
-  pro_descricao       String?
-  quantidade_cotacao  Decimal? @db.Decimal(15, 4)
-  quantidade_pedido   Decimal? @db.Decimal(15, 4)
-  valor_pedido        Decimal? @db.Decimal(15, 4)
-  // saldo: quanto DESTE pedido foi alocado do item da NF (quantidade_xml = qCom total, informativo)
-  quantidade_alocada  Decimal? @db.Decimal(15, 4)
-  excede_saldo        Boolean  @default(false)
-  // metadados do casamento
-  match_campo         String?  @db.VarChar(60)
-  match_valor         String?
-  origem              String?  @db.VarChar(20) // 'auto' | 'manual'
-  created_at          DateTime @default(now())
-  vinculo             com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
+  id                 String                 @id @default(cuid())
+  vinculo_id         String
+  tipo               String                 @db.VarChar(20)
+  produto_xml        String?
+  cprod_xml          String?
+  quantidade_xml     Decimal?               @db.Decimal(15, 4)
+  vuncom_xml         Decimal?               @db.Decimal(15, 4)
+  pro_codigo         Int?
+  pro_descricao      String?
+  quantidade_cotacao Decimal?               @db.Decimal(15, 4)
+  quantidade_pedido  Decimal?               @db.Decimal(15, 4)
+  valor_pedido       Decimal?               @db.Decimal(15, 4)
+  match_campo        String?                @db.VarChar(60)
+  match_valor        String?
+  origem             String?                @db.VarChar(20)
+  created_at         DateTime               @default(now())
+  quantidade_alocada Decimal?               @db.Decimal(15, 4)
+  excede_saldo       Boolean                @default(false)
+  vinculo            com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
 
   @@index([vinculo_id])
 }
@@ -299,6 +285,8 @@ model est_contagem {
   piso              String?            @db.VarChar
   status            Int                @default(0)
   tipo              Int                @default(1)
+  data_inicio       DateTime?
+  data_fim          DateTime?
   usuario           sis_usuarios       @relation(fields: [colaborador], references: [id])
   logs              est_contagem_log[]
 
@@ -417,6 +405,58 @@ model com_fifo_completo {
   tempo_medio_saldo_atual    Decimal?  @db.Decimal(15, 2)
   categoria_saldo_atual      String?   @db.VarChar(50)
   pro_referencia             String?
+  demanda_real_dia           Decimal?  @db.Decimal(15, 6)
+  sigma_demanda_dia          Decimal?  @db.Decimal(15, 6)
+  cv_demanda                 Decimal?  @db.Decimal(10, 4)
+  classe_xyz                 String?   @db.VarChar(2)
+  estoque_seguranca          Int?
+  nivel_servico_z            Decimal?  @db.Decimal(6, 4)
+  lead_time_dias             Int?
+  venda_perdida_12m          Decimal?  @db.Decimal(15, 4)
+  valor_vendido_12m          Decimal?  @db.Decimal(15, 4)
+  padrao_demanda             String?   @db.VarChar(20)
+  metodo_reposicao           String?   @db.VarChar(30)
+  fator_sazonal              Decimal?  @db.Decimal(8, 4)
+  demanda_planejamento_dia   Decimal?  @db.Decimal(15, 6)
+  sob_encomenda              Boolean?  @default(false)
+  grupo_chave                String?   @db.VarChar(255)
+  grupo_qtd_itens            Int?
+  grupo_estoque_disponivel   Decimal?  @db.Decimal(15, 4)
+  grupo_demanda_dia          Decimal?  @db.Decimal(15, 6)
+  grupo_fator_sazonal        Decimal?  @db.Decimal(8, 4)
+  grupo_curva                String?   @db.VarChar(10)
+  grupo_padrao               String?   @db.VarChar(20)
+  grupo_metodo               String?   @db.VarChar(30)
+  grupo_estoque_min          Int?
+  grupo_estoque_max          Int?
+  grupo_estoque_seguranca    Int?
+  mean_size_mes              Decimal?  @db.Decimal(15, 4)
+  cv2_tamanho                Decimal?  @db.Decimal(10, 4)
+  grupo_mean_size            Decimal?  @db.Decimal(15, 4)
+  grupo_cv2                  Decimal?  @db.Decimal(10, 4)
+  custo_unitario             Decimal?  @db.Decimal(15, 4)
+  margem_unitaria            Decimal?  @db.Decimal(15, 4)
+  margem_pct                 Decimal?  @db.Decimal(8, 4)
+  nivel_servico_custo        Decimal?  @db.Decimal(6, 4)
+  z_custo                    Decimal?  @db.Decimal(6, 4)
+  estoque_min_custo          Int?
+  estoque_max_custo          Int?
+  estoque_seg_custo          Int?
+  grupo_nivel_servico_custo  Decimal?  @db.Decimal(6, 4)
+  grupo_estoque_min_custo    Int?
+  grupo_estoque_max_custo    Int?
+  grupo_margem_pct           Decimal?  @db.Decimal(8, 4)
+  eh_original                Boolean?  @default(false)
+  teve_outlier_aparado       Boolean?  @default(false)
+  outlier_qtd_aparada        Decimal?  @db.Decimal(15, 2)
+  outlier_motivo             String?   @db.VarChar(255)
+  fator_sazonal_ciclo        Decimal?  @db.Decimal(8, 4)
+  fornecedor_principal       String?   @db.VarChar(200)
+  periodo_revisao_dias       Decimal?  @db.Decimal(6, 2)
+  grupo_lead_time_dias       Decimal?  @db.Decimal(6, 2)
+  marca_linha                Int?      @db.SmallInt
+  preco_venda_1              Decimal?  @db.Decimal(15, 4)
+  preco_venda_2              Decimal?  @db.Decimal(15, 4)
 
   @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
@@ -425,6 +465,12 @@ model com_fifo_completo {
   @@index([data_processamento], map: "idx_com_fifo_data_processamento")
   @@index([group_id], map: "idx_com_fifo_group_id")
   @@index([pro_codigo], map: "idx_com_fifo_pro_codigo")
+  @@index([classe_xyz], map: "idx_com_fifo_classe_xyz")
+  @@index([eh_original], map: "idx_com_fifo_eh_original")
+  @@index([grupo_chave], map: "idx_com_fifo_grupo_chave")
+  @@index([teve_outlier_aparado], map: "idx_com_fifo_outlier")
+  @@index([padrao_demanda], map: "idx_com_fifo_padrao_demanda")
+  @@index([sob_encomenda], map: "idx_com_fifo_sob_encomenda")
 }
 
 model com_kanban {
@@ -479,7 +525,6 @@ model com_nfe_conciliacao {
   status_analise           String                     @default("Tributado - Verificado")
   valor_guia               Float                      @default(0.0)
   status_erp               String                     @default("PENDENTE")
-  dt_entrada               DateTime?
   updated_at               DateTime
   created_at               DateTime                   @default(now())
   tipo_operacao            Int                        @default(0)
@@ -487,6 +532,13 @@ model com_nfe_conciliacao {
   tipo_imposto             String?                    @db.VarChar(50)
   compra_comercializacao   Boolean                    @default(false)
   uso_consumo              Boolean                    @default(false)
+  dt_entrada               DateTime?                  @db.Timestamp(6)
+  mva_verificado_em        DateTime?                  @db.Timestamptz(6)
+  mva_alerta_enviado_em    DateTime?                  @db.Timestamptz(6)
+  mva_maior                Decimal?                   @db.Decimal(7, 4)
+  auditoria_fiscal_em      DateTime?                  @db.Timestamptz(6)
+  auditoria_fiscal_status  String?                    @db.VarChar(20)
+  auditoria_alerta_em      DateTime?                  @db.Timestamptz(6)
   com_nfe_conciliacao_item com_nfe_conciliacao_item[]
 }
 
@@ -909,10 +961,6 @@ model com_produto_fornecedor_referencia {
   data       DateTime? @default(now()) @db.Timestamp(6)
   codigo     String?   @db.VarChar(255)
 
-  // Suporta o catalogoRefs (enriquecimento de referências): filtro por
-  // (fornecedor, codigo) + DISTINCT ON (fornecedor, codigo) ORDER BY data DESC.
-  // Sem ele, a query faz full scan + sort de ~154k linhas (~2s por vínculo).
-  // Índice aplicado manualmente no banco (ver SQL entregue).
   @@index([fornecedor, codigo, data], map: "idx_cpfr_forn_cod_data")
 }
 
@@ -922,41 +970,27 @@ model com_fornecedores {
   for_nome   String @db.VarChar(255)
 }
 
-// Parâmetros de COMPRA por fornecedor (lead time, revisão, pedido mínimo).
-// Preenchidos na tela /compras/fornecedores (aba Parâmetros de Compra) — uma
-// linha por for_codigo (os membros do grupo herdam os valores no salvamento).
-// Lidos pelo analise-estoque-service: lead_time/revisão entram no cálculo do
-// mínimo; pedido_minimo_valor alimenta o alerta da tela Comprar Agora.
-// DDL aplicado MANUALMENTE (ver sql/2026-07-03_fornecedor_parametros.sql no
-// analise-estoque-service) — rodar apenas `npx prisma generate` aqui.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model com_fornecedor_parametros {
   id                  Int       @id @default(autoincrement())
-  for_codigo          Int       @unique(map: "com_fornecedor_parametros_for_codigo_key")
+  for_codigo          Int       @unique
   for_nome            String    @db.VarChar(255)
   lead_time_dias      Int?
   tempo_revisao_dias  Int?
   pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
-  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
-  // Fornecedor trabalha com CARTEIRA (backorder): quando true, o item de pedido
-  // não faturado fica pendente indefinidamente (comportamento antigo). Quando
-  // false (padrão), após lançar a(s) NF o comprador resolve os itens que ficaram
-  // de fora, marcando-os como "Não Atendido pelo Fornecedor". DDL manual.
-  trabalha_carteira   Boolean   @default(false)
   updated_at          DateTime? @default(now()) @db.Timestamp(6)
   updated_by          String?   @db.VarChar(100)
+  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
+  trabalha_carteira   Boolean   @default(false)
 }
 
 model com_fornecedor_relacionamento {
-  id         String    @id @db.VarChar(191)
-  group_id   String    @db.VarChar(100)
-  for_codigo Int       @unique(map: "uq_forn_rel_for_codigo")
-  principal  Boolean   @default(false)
-  // Quando true, os produtos deste fornecedor/grupo trazem a REFERÊNCIA no FINAL
-  // da descrição (ex.: ARTEB: "... MARCA ARTEB - 460405"), e não no código. O
-  // match de NF-e extrai esse número do xProd e casa contra a referência da cotação.
-  // Basta um membro do grupo com a flag para o grupo inteiro ser tratado assim.
-  ref_descricao Boolean @default(false)
-  created_at DateTime? @default(now()) @db.Timestamp(6)
+  id            String    @id @db.VarChar(191)
+  group_id      String    @db.VarChar(100)
+  for_codigo    Int       @unique(map: "uq_forn_rel_for_codigo")
+  principal     Boolean   @default(false)
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  ref_descricao Boolean   @default(false)
 
   @@index([group_id], map: "idx_forn_rel_group")
 }
@@ -1051,4 +1085,406 @@ model ven_venda_casada_itens {
   prazo      String? @db.VarChar(100)
   fornecedor String? @db.VarChar(255)
   marca      String? @db.VarChar(255)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model avi_aviso_alvo {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  aviso_id   String     @db.VarChar(36)
+  tipo       String     @db.VarChar(10)
+  valor      String?
+  avi_avisos avi_avisos @relation(fields: [aviso_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([aviso_id], map: "ix_avi_alvo_aviso")
+  @@index([tipo, valor], map: "ix_avi_alvo_lookup")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model avi_avisos {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  regra_id             String?                @db.VarChar(36)
+  origem               String                 @db.VarChar(10)
+  evento_chave         String?                @db.VarChar(160)
+  titulo               String
+  corpo                String?
+  link                 String?
+  prioridade           String                 @default("normal") @db.VarChar(10)
+  canais               String[]               @default(["badge", "mural"])
+  fixado               Boolean                @default(false)
+  autor_id             String?                @db.VarChar(36)
+  contador             Int                    @default(1)
+  publicado_em         DateTime               @default(now()) @db.Timestamp(6)
+  expira_em            DateTime?              @db.Timestamp(6)
+  trash                Int                    @default(0) @db.SmallInt
+  created_at           DateTime               @default(now()) @db.Timestamp(6)
+  updated_at           DateTime               @default(now()) @db.Timestamp(6)
+  avi_aviso_alvo       avi_aviso_alvo[]
+  avi_regra            avi_regra?             @relation(fields: [regra_id], references: [id], onUpdate: NoAction)
+  avi_entrega_whatsapp avi_entrega_whatsapp[]
+  avi_leitura          avi_leitura[]
+
+  @@index([trash, prioridade, publicado_em(sort: Desc)], map: "ix_avi_avisos_ativos")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model avi_entrega_whatsapp {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  aviso_id   String     @db.VarChar(36)
+  setor      String?
+  chat_id    String
+  status     String     @default("pendente") @db.VarChar(12)
+  detalhe    String?
+  enviado_em DateTime?  @db.Timestamp(6)
+  avi_avisos avi_avisos @relation(fields: [aviso_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([aviso_id, chat_id])
+}
+
+model avi_leitura {
+  aviso_id   String     @db.VarChar(36)
+  usuario_id String     @db.VarChar(36)
+  lido_em    DateTime   @default(now()) @db.Timestamp(6)
+  avi_avisos avi_avisos @relation(fields: [aviso_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([aviso_id, usuario_id])
+  @@index([usuario_id], map: "ix_avi_leitura_usuario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model avi_regra {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  chave           String       @unique @db.VarChar(120)
+  descricao       String?
+  origem          String       @default("sistema") @db.VarChar(10)
+  ativo           Boolean      @default(false)
+  auto_descoberta Boolean      @default(false)
+  titulo_template String
+  corpo_template  String?
+  link_template   String?
+  prioridade      String       @default("normal") @db.VarChar(10)
+  canais          String[]     @default(["badge", "mural"])
+  alvo_tipo       String?      @db.VarChar(10)
+  alvo_valor      String?
+  agrupar         Boolean      @default(true)
+  cooldown_min    Int          @default(0)
+  created_at      DateTime     @default(now()) @db.Timestamp(6)
+  updated_at      DateTime     @default(now()) @db.Timestamp(6)
+  avi_avisos      avi_avisos[]
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model com_cte_documento {
+  chave_acesso          String    @id @db.VarChar(44)
+  numero                String?   @db.VarChar(20)
+  serie                 String?   @db.VarChar(10)
+  cfop                  String?   @db.VarChar(10)
+  emitente_nome         String?   @db.VarChar(120)
+  emitente_cnpj         String?   @db.VarChar(20)
+  remetente_nome        String?   @db.VarChar(120)
+  destinatario_nome     String?   @db.VarChar(120)
+  origem                String?   @db.VarChar(80)
+  destino               String?   @db.VarChar(80)
+  valor_total           Decimal   @default(0) @db.Decimal(15, 2)
+  data_emissao          DateTime? @db.Timestamptz(6)
+  status                String    @default("PENDENTE") @db.VarChar(12)
+  dt_entrada            DateTime? @db.Timestamptz(6)
+  xml_completo          String    @default("")
+  dados_json            Json?
+  hash                  String?   @db.VarChar(64)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @default(now()) @db.Timestamptz(6)
+  tipo_frete            String    @default("OUTRO") @db.VarChar(10)
+  tomador_nome          String?   @db.VarChar(120)
+  tomador_nos           Boolean   @default(false)
+  tomador_cnpj          String?   @db.VarChar(20)
+  modalidade_pagador    String?   @db.VarChar(20)
+  rastreio_status       String?
+  rastreio_cobertura    String?
+  rastreio_dominio      String?
+  rastreio_previsao     DateTime?
+  rastreio_entregue_em  DateTime?
+  rastreio_recebedor    String?
+  rastreio_ult_evento   String?
+  rastreio_ult_consulta DateTime?
+  rastreio_tentativas   Int       @default(0)
+
+  @@index([rastreio_status])
+  @@index([data_emissao], map: "ix_cte_documento_data")
+  @@index([tipo_frete], map: "ix_cte_documento_frete")
+  @@index([numero], map: "ix_cte_documento_numero")
+  @@index([status], map: "ix_cte_documento_status")
+}
+
+model com_cte_rastreio_evento {
+  id             Int      @id @default(autoincrement())
+  chave_acesso   String
+  data_hora      DateTime
+  codigo_ssw     String?
+  ocorrencia     String?
+  descricao      String?
+  cidade         String?
+  filial         String?
+  tipo           String?
+  nome_recebedor String?
+  dominio        String?
+  created_at     DateTime @default(now())
+
+  @@unique([chave_acesso, data_hora, codigo_ssw], map: "uq_cte_evento")
+  @@index([chave_acesso], map: "com_cte_rastreio_evento_chave_idx")
+}
+
+model com_cte_transportadora_cobertura {
+  cnpj_raiz              String    @id
+  nome                   String?
+  coberta                Boolean?
+  dominio                String?
+  tentativas_sem_sucesso Int       @default(0)
+  ultima_verificacao     DateTime?
+  atualizado_em          DateTime  @default(now())
+}
+
+model com_fiscal_cfop {
+  id              BigInt   @id @default(autoincrement())
+  cfop_fornecedor String   @db.VarChar(5)
+  destinacao      String   @default("QUALQUER") @db.VarChar(20)
+  tem_cest        String   @default("QUALQUER") @db.VarChar(10)
+  cfop_entrada    String   @db.VarChar(5)
+  cst_final       String?  @db.VarChar(2)
+  ativo           Boolean  @default(true)
+  descricao       String?
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([cfop_fornecedor], map: "ix_fiscal_cfop_forn")
+}
+
+model com_fiscal_opf_destinacao {
+  id         BigInt  @id @default(autoincrement())
+  opf_codigo String  @unique @db.VarChar(10)
+  destinacao String  @db.VarChar(20)
+  ativo      Boolean @default(true)
+}
+
+model com_fiscal_origem_cst {
+  id          BigInt  @id @default(autoincrement())
+  origem_de   String  @unique @db.VarChar(1)
+  origem_para String  @db.VarChar(1)
+  ativo       Boolean @default(true)
+}
+
+model com_fiscal_regra {
+  id              BigInt   @id @default(autoincrement())
+  imposto         String   @db.VarChar(20)
+  destinacao      String   @db.VarChar(20)
+  monofasico      Boolean?
+  cfop_sufixo     String?  @db.VarChar(4)
+  cst_final       String?  @db.VarChar(2)
+  st_codigo       String?  @db.VarChar(20)
+  pis_codigo      String?  @db.VarChar(10)
+  cofins_codigo   String?  @db.VarChar(10)
+  subtipo         String?  @db.VarChar(4)
+  comercializavel String?  @db.VarChar(2)
+  subgrp_codigo   String?  @db.VarChar(10)
+  ativo           Boolean  @default(true)
+  descricao       String?
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model com_marca_linha {
+  mar_descricao String    @id @db.VarChar(200)
+  linha         Int       @db.SmallInt
+  observacao    String?   @db.VarChar(255)
+  updated_at    DateTime? @default(now()) @db.Timestamp(6)
+  updated_by    String?   @db.VarChar(100)
+}
+
+model com_nfe_ajustado_processado {
+  waha_msg_id   String   @id
+  chave_nfe     String?
+  resultado     String?
+  processado_em DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([chave_nfe], map: "ix_ajustado_proc_chave")
+}
+
+model com_nfe_auditoria_item {
+  id         BigInt   @id @default(autoincrement())
+  chave_nfe  String   @db.VarChar(44)
+  n_item     Int
+  campo      String   @db.VarChar(30)
+  esperado   String?  @db.VarChar(40)
+  encontrado String?  @db.VarChar(40)
+  mensagem   String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([chave_nfe, n_item, campo])
+  @@index([chave_nfe], map: "ix_auditoria_item_chave")
+}
+
+model com_nfe_ressalva {
+  id         BigInt   @id @default(autoincrement())
+  chave_nfe  String   @db.VarChar(44)
+  n_item     Int
+  motivo     String?
+  criado_por String?  @db.VarChar(120)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([chave_nfe, n_item], map: "uq_ressalva")
+  @@index([chave_nfe], map: "ix_ressalva_chave")
+}
+
+model com_nfse_certificado {
+  cnpj          String    @id @db.VarChar(14)
+  nome          String?   @db.VarChar(255)
+  arquivo       Bytes
+  senha         String
+  validade_ate  DateTime? @db.Timestamp(6)
+  ativo         Boolean   @default(true)
+  atualizado_em DateTime  @default(now()) @db.Timestamp(6)
+  created_at    DateTime  @default(now()) @db.Timestamp(6)
+}
+
+model com_nfse_dist_controle {
+  cnpj            String    @id @db.VarChar(14)
+  ultimo_nsu      BigInt    @default(0)
+  max_nsu         BigInt    @default(0)
+  ultima_consulta DateTime? @db.Timestamp(6)
+  atualizado_em   DateTime  @default(now()) @db.Timestamp(6)
+}
+
+model com_nfse_documento {
+  chave_acesso      String    @id @db.VarChar(60)
+  cnpj_destinatario String    @db.VarChar(14)
+  ultimo_nsu        BigInt    @default(0)
+  numero            String?   @db.VarChar(30)
+  serie             String?   @db.VarChar(10)
+  cnpj_prestador    String?   @db.VarChar(14)
+  nome_prestador    String?   @db.VarChar(255)
+  cnpj_tomador      String?   @db.VarChar(14)
+  nome_tomador      String?   @db.VarChar(255)
+  valor             Float?
+  data_emissao      DateTime? @db.Timestamp(6)
+  competencia       DateTime? @db.Timestamp(6)
+  situacao          String    @default("NORMAL") @db.VarChar(20)
+  papel             String?   @db.VarChar(20)
+  xml               String    @default("")
+  hash              String?   @db.VarChar(64)
+  dados_json        Json?
+  processado        Boolean   @default(false)
+  created_at        DateTime  @default(now()) @db.Timestamp(6)
+  updated_at        DateTime  @default(now()) @db.Timestamp(6)
+  retencao_federal  Float     @default(0)
+
+  @@index([data_emissao], map: "idx_nfse_documento_emissao")
+  @@index([numero], map: "idx_nfse_documento_numero")
+  @@index([cnpj_prestador], map: "idx_nfse_documento_prestador")
+  @@index([retencao_federal], map: "idx_nfse_documento_ret_fed")
+}
+
+model com_nfse_evento {
+  nsu          BigInt    @id
+  chave_acesso String    @db.VarChar(60)
+  tipo_evento  String?   @db.VarChar(60)
+  data_evento  DateTime? @db.Timestamp(6)
+  xml          String    @default("")
+  dados_json   Json?
+  created_at   DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([chave_acesso], map: "idx_nfse_evento_chave")
+}
+
+model fin_analise {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  criado_em        DateTime @default(now()) @db.Timestamp(6)
+  criado_por       String?  @db.VarChar(36)
+  documento        String   @db.VarChar(20)
+  tipo             String?  @db.VarChar(4)
+  razao_social     String?
+  versao_modelo    String?  @db.VarChar(20)
+  score_final      Int?
+  faixa_pct        Float?
+  limite_atual_erp Int?
+  sugestao_op2     Int?
+  sugestao_op3     Int?
+  limite_recomend  Int?
+  rating           String?  @db.VarChar(3)
+  pd_pct           Float?
+  bloqueado        Boolean  @default(false)
+  analista         String?
+  parecer          String?
+  dossie_json      Json?
+  resultado_json   Json?
+
+  @@index([criado_em], map: "idx_fin_analise_data")
+  @@index([documento], map: "idx_fin_analise_doc")
+}
+
+model fin_excedente {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  criado_em          DateTime  @default(now()) @db.Timestamp(6)
+  criado_por         String?   @db.VarChar(36)
+  documento          String    @db.VarChar(20)
+  codigo_erp         Int?
+  razao_social       String?
+  valor_solicitado   Float?
+  limite_total       Float?
+  limite_disponivel  Float?
+  valor_excedente    Float?
+  nova_exposicao     Float?
+  capacidade_provada Float?
+  nivel_risco        String?   @db.VarChar(10)
+  recomendacao       String?
+  calco              String?
+  analista           String?
+  decisao            String?   @db.VarChar(10)
+  resultado          String?   @db.VarChar(10)
+  resultado_obs      String?
+  resultado_em       DateTime? @db.Timestamp(6)
+  resultado_json     Json?
+
+  @@index([documento], map: "idx_fin_exc_doc")
+  @@index([resultado], map: "idx_fin_exc_resultado")
+}
+
+model fin_parecer_ia {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  criado_em    DateTime @default(now()) @db.Timestamp(6)
+  criado_por   String?  @db.VarChar(36)
+  documento    String   @db.VarChar(20)
+  modelo       String?  @db.VarChar(30)
+  brief_json   Json?
+  parecer_json Json?
+
+  @@index([criado_em], map: "idx_fin_parecer_data")
+  @@index([documento], map: "idx_fin_parecer_doc")
+}
+
+model fin_spc_consulta {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.VarChar(36)
+  criado_em          DateTime  @default(now()) @db.Timestamp(6)
+  criado_por         String?   @db.VarChar(36)
+  documento          String    @db.VarChar(20)
+  nome               String?
+  data_consulta      DateTime? @db.Timestamp(6)
+  origem             String?   @db.VarChar(20)
+  score              Int?
+  classe             String?   @db.VarChar(4)
+  prob_inadimplencia Float?
+  consultas_90d      Int?
+  consultas_30d      Int?
+  tem_restricao      Boolean?
+  negativacoes_valor Float?
+  protestos_valor    Float?
+  judicial_qtde      Int?
+  alerta_doc         Boolean?
+  contumacia         Int?
+  credito_concedido  Float?
+  limite_sugerido    Float?
+  protocolo          String?
+  arquivo            String?
+  json_completo      Json?
+  dedupe_chave       String    @unique @db.VarChar(200)
+
+  @@index([data_consulta], map: "idx_fin_spc_data")
+  @@index([documento], map: "idx_fin_spc_doc")
 }
