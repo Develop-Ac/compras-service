@@ -238,8 +238,6 @@ export class CotacaoSyncService {
 
     const erpMap = await this.fetchProdutosInfoOneShot(allCodes, 3);
 
-    console.log(fornecedoresLocal[0].itens)
-
     return fornecedoresLocal.map((f) => ({
       ...f,
       itens: f.itens.map((it) => {
