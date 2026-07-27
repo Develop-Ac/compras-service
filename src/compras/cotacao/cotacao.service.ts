@@ -102,6 +102,27 @@ export class CotacaoService {
       dt_ultima_compra: i.DT_ULTIMA_COMPRA ? new Date(i.DT_ULTIMA_COMPRA) : null,
     }));
 
+    // As telas intranet ("Comprar Agora"/Análise) muitas vezes montam o item
+    // sem `referencia` (a fonte de análise não a devolve). Completamos o que
+    // veio vazio a partir da Stage `Stage_Produtos` (SQL Server BI), numa única
+    // consulta. Best-effort: se o BI falhar, grava sem referência em vez de
+    // bloquear a criação da cotação.
+    const isVazio = (v: string | null) => v == null || String(v).trim() === '';
+    const faltando = itensLower.filter((i) => isVazio(i.referencia) && Number.isFinite(i.pro_codigo));
+    if (faltando.length) {
+      try {
+        const info = await this.repo.getProdutosInfo(empresa, faltando.map((i) => i.pro_codigo));
+        for (const it of itensLower) {
+          const p = info.get(Number(it.pro_codigo));
+          if (!p) continue;
+          if (isVazio(it.referencia)) it.referencia = p.referencia ?? it.referencia;
+          if (isVazio(it.unidade)) it.unidade = p.unidade ?? it.unidade;
+        }
+      } catch {
+        // não bloqueia a criação da cotação
+      }
+    }
+
     await this.repo.upsertCotacaoWithItems(empresa, pedido_cotacao, dias_compra, itensLower);
 
     await fetch('http://log-service.acacessorios.local/log', {
