@@ -257,6 +257,14 @@ export class PedidoRepository {
     );
     return pedidosWithItens;
   }
+
+  async findNameFonecedorByForCodigo(for_codigo: number) {
+    const fornecedor = await this.prisma.com_fornecedores.findFirst({
+      where: { for_codigo },
+      select: { for_nome: true },
+    });
+    return fornecedor?.for_nome ?? null;
+  }
   
   async findByIdWithAll(id: string) {
     const pedidos = await this.prisma.com_pedido.findMany({
