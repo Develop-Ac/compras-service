@@ -18,6 +18,7 @@ import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
 import { GarantiaModule } from './compras/garantia/garantia.module';
+import { CompraCasadaModule } from './compras/compra-casada/compra-casada.module';
 
 @Module({
 imports: [
@@ -37,6 +38,7 @@ imports: [
     VinculacaoNfeModule,
     FornecedorGrupoModule,
     GarantiaModule,
+    CompraCasadaModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -51,7 +53,8 @@ imports: [
       { path: 'compras', module: PedidosLogsModule },
       { path: 'compras', module: VinculacaoNfeModule },
       { path: 'compras', module: FornecedorGrupoModule },
-      { path: 'compras', module: GarantiaModule }
+      { path: 'compras', module: GarantiaModule },
+      { path: 'compras', module: CompraCasadaModule }
     ]),
   ],
   controllers: [AppController],
