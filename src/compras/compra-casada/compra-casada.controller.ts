@@ -23,7 +23,7 @@ import {
 import { CompraCasadaFornecedoresService } from './compra-casada.service';
 import { FornecedoresPorProdutoDto } from './dto/fornecedor-subgrupo.dto';
 
-@ApiTags('Compra Casada')
+@ApiTags('Compra - Casada')
 @Controller('compra-casada')
 export class CompraCasadaController {
   constructor(
@@ -35,10 +35,10 @@ export class CompraCasadaController {
     summary: 'Lista os fornecedores do subgrupo de um produto',
     description:
       'A partir do PRO_CODIGO, resolve o subgrupo do produto (Stage_Produtos -> ' +
-      'Stage_ProdutosSubgrupos) e retorna, do ERP, todos os fornecedores que já ' +
-      'venderam produtos desse subgrupo, com métricas de compra (produtos, notas, ' +
-      'quantidade, valor total e datas da primeira/última compra). ' +
-      'Ordenado por valor total comprado (maior primeiro).',
+      'Stage_ProdutosSubgrupos) e retorna, da staging do BI ' +
+      '(Stage_FornecedorSubgrupos), todos os fornecedores que já venderam produtos ' +
+      'desse subgrupo, com contato (telefone, celular, observações), UF e a data da ' +
+      'última compra. Ordenado pela última compra (mais recente primeiro).',
   })
   @ApiParam({
     name: 'pro_codigo',

@@ -1,18 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { MssqlService } from '../../common/mssql/mssql.service';
 
-/** Linha crua devolvida pelo OPENQUERY (colunas em MAIÚSCULO, como no ERP). */
+/** Linha crua da Stage_FornecedorSubgrupos (colunas em MAIÚSCULO, como no BI). */
 export interface FornecedorSubgrupoRow {
+  ID: number;
+  DATA_CARGA: Date | null;
   SUBGRP_CODIGO: number;
   SUBGRP_DESCRICAO: string;
   FOR_CODIGO: number;
   FOR_NOME: string;
-  QTD_PRODUTOS: number;
-  QTD_NOTAS: number;
-  QTD_COMPRADA: number;
-  VALOR_TOTAL: number;
-  PRIMEIRA_COMPRA: Date | null;
+  FOR_FONE: string | null;
+  FOR_CELULAR: string | null;
+  FOR_OBS: string | null;
+  FOR_UF: string | null;
   ULTIMA_COMPRA: Date | null;
+  CARGA_EM: Date | null;
 }
 
 /** Empresa da matriz — mesma usada no filtro `i.empresa = 3` do OPENQUERY. */
@@ -47,55 +49,31 @@ export class CompraCasadaFornecedoresRepository {
   }
 
   /**
-   * Fornecedores que já venderam produtos do subgrupo, com métricas de compra
-   * (notas de entrada). Vai direto ao ERP via linked server `CONSULTA` — o BI
-   * não tem essa granularidade de nfe_itens.
-   *
-   * OPENQUERY não aceita parâmetros: a query interna é uma string literal T-SQL,
-   * então a descrição precisa ser escapada em dobro (aspas simples -> 4 aspas).
+   * Fornecedores que já venderam produtos do subgrupo, direto da staging do BI
+   * (`Stage_FornecedorSubgrupos`) — substitui o OPENQUERY no ERP.
+   * Ordenado pela última compra (mais recente primeiro).
    */
   async fornecedoresPorSubgrupo(
     subgrpDescricao: string,
   ): Promise<FornecedorSubgrupoRow[]> {
-    const literal = `''${subgrpDescricao.replace(/'/g, "''''")}''`;
-
-    const query = `
-      SELECT *
-      FROM OPENQUERY(CONSULTA, '
-          SELECT
-              COALESCE(p.subgrp_codigo, 0)                      AS SUBGRP_CODIGO,
-              COALESCE(sg.subgrp_descricao, ''(SEM SUBGRUPO)'') AS SUBGRP_DESCRICAO,
-              f.for_codigo                                      AS FOR_CODIGO,
-              f.for_nome                                        AS FOR_NOME,
-              COUNT(DISTINCT i.pro_codigo)                      AS QTD_PRODUTOS,
-              COUNT(DISTINCT e.nfe)                             AS QTD_NOTAS,
-              SUM(i.quantidade)                                 AS QTD_COMPRADA,
-              SUM(i.total)                                      AS VALOR_TOTAL,
-              MIN(e.dt_entrada)                                 AS PRIMEIRA_COMPRA,
-              MAX(e.dt_entrada)                                 AS ULTIMA_COMPRA
-          FROM nfe_itens i
-          JOIN nf_entrada e
-            ON e.empresa = i.empresa AND e.nfe = i.nfe
-          JOIN fornecedores f
-            ON f.empresa = e.empresa AND f.for_codigo = e.for_codigo
-          JOIN produtos p
-            ON p.empresa = i.empresa AND p.pro_codigo = i.pro_codigo
-          LEFT JOIN produtos_subgrupos sg
-            ON sg.empresa = p.empresa AND sg.subgrp_codigo = p.subgrp_codigo
-          WHERE i.empresa = ${EMPRESA}
-            AND e.dt_cancelamento IS NULL
-            AND e.opf_codigo IN (1, 2, 40)
-            AND f.for_nome NOT LIKE ''%(DEPOSITO)%''
-            AND sg.subgrp_descricao = ${literal}
-          GROUP BY
-              COALESCE(p.subgrp_codigo, 0),
-              COALESCE(sg.subgrp_descricao, ''(SEM SUBGRUPO)''),
-              f.for_codigo,
-              f.for_nome
-      ') AS t
-      ORDER BY t.SUBGRP_DESCRICAO, t.VALOR_TOTAL DESC
-    `;
-
-    return this.mssql.query<FornecedorSubgrupoRow>(query);
+    return this.mssql.query<FornecedorSubgrupoRow>(
+      `SELECT
+           ID,
+           DATA_CARGA,
+           SUBGRP_CODIGO,
+           SUBGRP_DESCRICAO,
+           FOR_CODIGO,
+           FOR_NOME,
+           FOR_FONE,
+           FOR_CELULAR,
+           FOR_OBS,
+           FOR_UF,
+           ULTIMA_COMPRA,
+           CARGA_EM
+       FROM dbo.Stage_FornecedorSubgrupos
+       WHERE SUBGRP_DESCRICAO = @sub
+       ORDER BY ULTIMA_COMPRA DESC`,
+      { sub: subgrpDescricao },
+    );
   }
 }

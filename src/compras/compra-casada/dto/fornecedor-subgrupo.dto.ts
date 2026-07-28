@@ -8,28 +8,28 @@ export class FornecedorSubgrupoDto {
   for_nome!: string;
 
   @ApiProperty({
-    description: 'Produtos distintos do subgrupo já comprados deste fornecedor',
-    example: 37,
+    description: 'Telefone do fornecedor',
+    nullable: true,
+    example: '(11) 3434-1200',
   })
-  qtd_produtos!: number;
-
-  @ApiProperty({ description: 'Notas de entrada distintas', example: 12 })
-  qtd_notas!: number;
-
-  @ApiProperty({ description: 'Quantidade total comprada', example: 1540 })
-  qtd_comprada!: number;
-
-  @ApiProperty({ description: 'Valor total comprado (R$)', example: 87540.35 })
-  valor_total!: number;
+  for_fone!: string | null;
 
   @ApiProperty({
-    description: 'Data da primeira compra',
-    type: String,
-    format: 'date-time',
+    description: 'Celular do fornecedor',
     nullable: true,
-    example: '2021-03-14T00:00:00.000Z',
+    example: '(11) 99876-5432',
   })
-  primeira_compra!: Date | null;
+  for_celular!: string | null;
+
+  @ApiProperty({
+    description: 'Observações cadastradas para o fornecedor',
+    nullable: true,
+    example: 'Pedido mínimo R$ 2.000,00',
+  })
+  for_obs!: string | null;
+
+  @ApiProperty({ description: 'UF do fornecedor', nullable: true, example: 'SP' })
+  for_uf!: string | null;
 
   @ApiProperty({
     description: 'Data da última compra',
@@ -39,6 +39,24 @@ export class FornecedorSubgrupoDto {
     example: '2026-05-02T00:00:00.000Z',
   })
   ultima_compra!: Date | null;
+
+  @ApiProperty({
+    description: 'Data de referência da carga no BI',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-07-28T00:00:00.000Z',
+  })
+  data_carga!: Date | null;
+
+  @ApiProperty({
+    description: 'Momento em que a linha foi carregada no BI',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-07-28T03:15:00.000Z',
+  })
+  carga_em!: Date | null;
 }
 
 export class FornecedoresPorProdutoDto {
@@ -55,7 +73,7 @@ export class FornecedoresPorProdutoDto {
   total!: number;
 
   @ApiProperty({
-    description: 'Fornecedores do subgrupo, do maior para o menor valor comprado',
+    description: 'Fornecedores do subgrupo, da compra mais recente para a mais antiga',
     type: [FornecedorSubgrupoDto],
   })
   fornecedores!: FornecedorSubgrupoDto[];
