@@ -418,6 +418,18 @@ model com_fifo_completo {
   categoria_saldo_atual      String?   @db.VarChar(50)
   pro_referencia             String?
 
+  // Colunas materializadas pelo ETL do analise-estoque-service (dono da escrita desta
+  // tabela) e consumidas pelo modulo de precificacao (O6 / EP-012). Ja existiam no banco;
+  // faltavam apenas na declaracao Prisma deste servico, o que quebrava o build no CI
+  // (o client local havia sido gerado de uma versao do schema que as declarava).
+  // Somente leitura: este servico nunca escreve em com_fifo_completo.
+  grupo_chave                String?   @db.VarChar(255)
+  grupo_qtd_itens            Int?
+  demanda_planejamento_dia   Decimal?  @db.Decimal(15, 6)
+  grupo_demanda_dia          Decimal?  @db.Decimal(15, 6)
+  preco_venda_1              Decimal?  @db.Decimal(15, 4)
+  preco_venda_2              Decimal?  @db.Decimal(15, 4)
+
   @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
   @@index([categoria_saldo_atual], map: "idx_com_fifo_categoria_saldo_atual")
