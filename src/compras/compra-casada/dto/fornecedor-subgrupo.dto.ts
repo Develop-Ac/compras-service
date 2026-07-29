@@ -41,6 +41,26 @@ export class FornecedorSubgrupoDto {
   ultima_compra!: Date | null;
 
   @ApiProperty({
+    description:
+      'Data da última compra DESTE produto neste fornecedor (ao vivo no ERP). ' +
+      'null quando o fornecedor nunca vendeu o produto consultado.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-06-18T00:00:00.000Z',
+  })
+  ultima_compra_produto!: Date | null;
+
+  @ApiProperty({
+    description:
+      'Valor unitário do produto na última compra deste fornecedor (ao vivo no ERP). ' +
+      'null quando o fornecedor nunca vendeu o produto consultado.',
+    nullable: true,
+    example: 412.5,
+  })
+  unitario_produto!: number | null;
+
+  @ApiProperty({
     description: 'Data de referência da carga no BI',
     type: String,
     format: 'date-time',

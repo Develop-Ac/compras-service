@@ -24,7 +24,8 @@ export class CompraCasadaFornecedoresService {
   /**
    * Fornecedores que abastecem o subgrupo do produto informado.
    * Fluxo: pro_codigo -> subgrp_codigo (Stage_Produtos) -> subgrp_descricao
-   * (Stage_ProdutosSubgrupos) -> fornecedores (Stage_FornecedorSubgrupos).
+   * (Stage_ProdutosSubgrupos) -> fornecedores (Stage_FornecedorSubgrupos),
+   * enriquecidos com a última compra do produto no ERP (OPENQUERY).
    */
   async porProduto(proCodigo: number): Promise<FornecedoresPorProdutoDto> {
     const subgrpCodigo = await this.repository.subgrupoDoProduto(proCodigo);
@@ -41,19 +42,35 @@ export class CompraCasadaFornecedoresService {
       );
     }
 
-    const rows = await this.repository.fornecedoresPorSubgrupo(subgrpDescricao);
+    // Staging (fornecedores do subgrupo) + ERP ao vivo (última compra do produto).
+    const [rows, ultimas] = await Promise.all([
+      this.repository.fornecedoresPorSubgrupo(subgrpDescricao),
+      this.repository.ultimaCompraProdutoPorFornecedor(proCodigo),
+    ]);
 
-    const fornecedores: FornecedorSubgrupoDto[] = rows.map((r) => ({
-      for_codigo: num(r.FOR_CODIGO),
-      for_nome: text(r.FOR_NOME) ?? '',
-      for_fone: text(r.FOR_FONE),
-      for_celular: text(r.FOR_CELULAR),
-      for_obs: text(r.FOR_OBS),
-      for_uf: text(r.FOR_UF),
-      ultima_compra: r.ULTIMA_COMPRA ?? null,
-      data_carga: r.DATA_CARGA ?? null,
-      carga_em: r.CARGA_EM ?? null,
-    }));
+    // rn = 1 no OPENQUERY garante uma linha por fornecedor para este produto.
+    const ultimaPorFornecedor = new Map(
+      ultimas.map((u) => [num(u.FOR_CODIGO), u]),
+    );
+
+    const fornecedores: FornecedorSubgrupoDto[] = rows.map((r) => {
+      const forCodigo = num(r.FOR_CODIGO);
+      const ultima = ultimaPorFornecedor.get(forCodigo);
+
+      return {
+        for_codigo: forCodigo,
+        for_nome: text(r.FOR_NOME) ?? '',
+        for_fone: text(r.FOR_FONE),
+        for_celular: text(r.FOR_CELULAR),
+        for_obs: text(r.FOR_OBS),
+        for_uf: text(r.FOR_UF),
+        ultima_compra: r.ULTIMA_COMPRA ?? null,
+        ultima_compra_produto: ultima?.ULTIMA_COMPRA ?? null,
+        unitario_produto: ultima?.UNITARIO == null ? null : num(ultima.UNITARIO),
+        data_carga: r.DATA_CARGA ?? null,
+        carga_em: r.CARGA_EM ?? null,
+      };
+    });
 
     return {
       pro_codigo: proCodigo,

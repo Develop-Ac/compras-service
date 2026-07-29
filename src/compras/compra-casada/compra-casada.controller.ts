@@ -38,7 +38,10 @@ export class CompraCasadaController {
       'Stage_ProdutosSubgrupos) e retorna, da staging do BI ' +
       '(Stage_FornecedorSubgrupos), todos os fornecedores que já venderam produtos ' +
       'desse subgrupo, com contato (telefone, celular, observações), UF e a data da ' +
-      'última compra. Ordenado pela última compra (mais recente primeiro).',
+      'última compra. Cada fornecedor traz também, ao vivo do ERP, a data e o valor ' +
+      'unitário da última compra DESTE produto (ultima_compra_produto / ' +
+      'unitario_produto, null quando nunca comprou). ' +
+      'Ordenado pela última compra do subgrupo (mais recente primeiro).',
   })
   @ApiParam({
     name: 'pro_codigo',
