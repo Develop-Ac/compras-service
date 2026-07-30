@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -39,6 +41,10 @@ imports: [
     FornecedorGrupoModule,
     GarantiaModule,
     CompraCasadaModule,
+
+    PrometheusModule.register({
+      defaultMetrics: { enabled: true }, // CPU, memória, event loop, GC
+    }),
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
