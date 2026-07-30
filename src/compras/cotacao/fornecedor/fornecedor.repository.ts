@@ -40,7 +40,7 @@ export class FornecedorRepository {
     return this.prisma.com_pedido.findMany({
       where: {
       status: {
-        notIn: ['Entregue', 'Cancelado', 'Entregue Parcial'],
+        notIn: ['Entregue', 'Cancelado', 'Entregue parcialmente'],
       },
       },
       include: {
