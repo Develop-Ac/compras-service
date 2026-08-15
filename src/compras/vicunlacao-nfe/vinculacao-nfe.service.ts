@@ -197,7 +197,7 @@ export class VinculacaoNfeService {
     opts?: { itensCotacao?: ItemCotacao[]; refDescricao?: boolean; forCodigosGrupo?: number[] },
   ) {
     // 1) XML da NF-e — Postgres PRIMEIRO.
-    // O calculadora-st-service já importa o XML completo para com_nfe_conciliacao
+    // O fiscal-service já importa o XML completo para com_nfe_conciliacao
     // (íntegro). O OPENQUERY do Firebird, por outro lado, trunca XML_COMPLETO num
     // teto fixo (~11 KB), zerando os itens de NF-e maiores. Por isso usamos o
     // Postgres como fonte primária e o Firebird apenas como fallback.

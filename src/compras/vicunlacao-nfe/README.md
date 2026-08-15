@@ -75,7 +75,7 @@ por seleção em lista**, **persistir** o vínculo e adicionar **status automát
                             ▲
                             │ POST /vinculacao-nfe/nf-lancada
                 ┌───────────┴───────────┐
-                │ calculadora-st-service │  (ao marcar status_erp='LANCADA')
+                │ fiscal-service │  (ao marcar status_erp='LANCADA')
                 └────────────────────────┘
 ```
 
@@ -85,12 +85,12 @@ por seleção em lista**, **persistir** o vínculo e adicionar **status automát
 |---|---|
 | **cotacao-frontend** | Telas do pedido, modal de vínculo, conferência. |
 | **compras-service** | Motor de casamento, persistência, status, conferência, auto-vínculo. |
-| **calculadora-st-service** | Ao conciliar a NF e marcar `status_erp='LANCADA'`, chama `POST /vinculacao-nfe/nf-lancada` para que os pedidos virem `Entregue`. |
+| **fiscal-service** | Ao conciliar a NF e marcar `status_erp='LANCADA'`, chama `POST /vinculacao-nfe/nf-lancada` para que os pedidos virem `Entregue`. |
 | **log-service** | Recebe os eventos do histórico do pedido (`POST /log`), em *fire-and-forget*. |
 
 ### Fontes do XML da NF-e (ordem de prioridade)
 
-1. **Postgres `com_nfe_conciliacao`** (primária) — o `calculadora-st-service` importa o
+1. **Postgres `com_nfe_conciliacao`** (primária) — o `fiscal-service` importa o
    XML completo e **íntegro**.
 2. **Firebird `NF_ENTRADA_XML`** via OPENQUERY (fallback) — atenção: o OPENQUERY
    **trunca** `XML_COMPLETO` em ~11 KB, zerando os itens de NF maiores. Por isso o
@@ -365,7 +365,7 @@ nunca são sobrescritos.
 
 ## 8. NF lançada → Entregue (integração calculadora-st)
 
-Quando o `calculadora-st-service` marca `status_erp='LANCADA'` em `com_nfe_conciliacao`, ele
+Quando o `fiscal-service` marca `status_erp='LANCADA'` em `com_nfe_conciliacao`, ele
 chama `POST /vinculacao-nfe/nf-lancada` com `{ lancadas: [{ chave_nfe, dt_entrada }] }`.
 Para cada chave, o `compras-service` acha os vínculos **confirmados**, e `recalcularStatusPedido`
 decide entre `Entregue` (todos os itens cobertos por NF lançada) e `Entregue parcialmente`.

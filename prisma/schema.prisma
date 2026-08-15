@@ -430,6 +430,34 @@ model com_fifo_completo {
   preco_venda_1              Decimal?  @db.Decimal(15, 4)
   preco_venda_2              Decimal?  @db.Decimal(15, 4)
 
+  // Colunas de CUSTO/MARGEM materializadas pelo ETL do analise-estoque-service (dono da
+  // escrita desta tabela). DDL manual em `sql/2026-07-29_custo_fifo.sql` daquele servico —
+  // as tres ultimas nasceram ali; `custo_unitario`, `margem_unitaria` e `margem_pct` sao
+  // anteriores e o script apenas as recomentou por mudanca de semantica. Ja existiam no
+  // banco; faltavam na declaracao Prisma deste servico. Tipos conferidos em
+  // `information_schema.columns` (2026-07-29) — nao inferidos.
+  // Somente leitura: este servico nunca escreve em com_fifo_completo.
+  //
+  // Semantica corrigida em 2026-07-29 (DATA_MODEL#semantica-do-custo-em-com_fifo_completo):
+  // - custo_unitario: custo FIFO do estoque VIVO (media ponderada por qtd das camadas
+  //   residuais). Ate 2026-07-29 continha o custo medio das vendas 12m, hoje em
+  //   custo_cogs_12m. **NULL e ausencia de custo no ERP, nunca "de graca"** — 6.975
+  //   produtos passaram de 0,00 para NULL; consumidor precisa tratar NULL.
+  // - margem_unitaria / margem_pct: margem PROSPECTIVA (preco realizado 12m - custo do
+  //   estoque hoje). A base retrospectiva antiga vive em margem_unitaria_realizada.
+  // - custo_cogs_12m: custo medio ponderado do que FOI VENDIDO em 12m (COGS/qtd) — base da
+  //   margem realizada; nao e o custo do estoque.
+  // - custo_fonte: degrau da cadeia de custo (`camada_viva` | `ultima_entrada` | `cadastro`
+  //   | NULL) — sinal de confiabilidade do custo.
+  // - margem_unitaria_realizada: preco realizado 12m - custo_cogs_12m (base antiga de
+  //   margem_unitaria).
+  custo_unitario             Decimal?  @db.Decimal(15, 4)
+  margem_unitaria            Decimal?  @db.Decimal(15, 4)
+  margem_pct                 Decimal?  @db.Decimal(8, 4)
+  custo_cogs_12m             Decimal?  @db.Decimal(15, 4)
+  custo_fonte                String?   @db.VarChar(20)
+  margem_unitaria_realizada  Decimal?  @db.Decimal(15, 4)
+
   @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
   @@index([categoria_saldo_atual], map: "idx_com_fifo_categoria_saldo_atual")
@@ -1063,4 +1091,83 @@ model ven_venda_casada_itens {
   prazo      String? @db.VarChar(100)
   fornecedor String? @db.VarChar(255)
   marca      String? @db.VarChar(255)
+}
+
+// Régua de margem das três tabelas de preço — CONFIGURÁVEL EM DADO (US-040 / T-024).
+// Uma linha por (tabela_preco, faixa de custo); intervalo MEIO-ABERTO
+// [custo_min, custo_max), com custo_max = custo_min da faixa seguinte e NULL =
+// infinito na última. Cobertura total por construção: nenhum custo fica sem faixa
+// (AC3), inclusive custo com mais de duas casas vindo de divisão por quantidade.
+// Consequência declarada: 400,00 cai em 99,01–400,00 e 400,01 já cai na regra de
+// "acima de 400,00" — a mesma que vale para um custo de R$ 500,00.
+//
+// Versionamento append-only: alterar faixa NÃO faz UPDATE dos limites — fecha a
+// linha vigente (vigencia_fim/encerrado_por/encerrado_em) e insere outra. A tabela
+// é o próprio histórico auditável exigido pelo DoD ("quem alterou, quando").
+//
+// A não-monotonicidade entre as duas últimas faixas do varejo (110% → 150%) é
+// INTENCIONAL (PRD#escopo) — não existe constraint comparando faixas vizinhas.
+//
+// markup_min_pct/markup_max_pct em Decimal(8,4), a MESMA precisão de
+// com_fifo_completo.margem_pct (total 8, não 15 — medido na T-023): teto de
+// 9999,9999%. A régua de hoje chega a 1000%, sem conflito.
+//
+// A UNICIDADE da faixa vigente é um índice PARCIAL
+// (uq_com_precificacao_faixa_vigente ... WHERE vigencia_fim IS NULL), não
+// representável no schema Prisma — vive só na DDL; aqui declara-se o índice de
+// histórico. Não usar findUnique por (tabela_preco, custo_min): as linhas
+// encerradas repetem a combinação.
+//
+// DDL aplicado MANUALMENTE (sql/2026-07-30_precificacao_faixas.sql) — rodar apenas
+// `npx prisma generate` aqui.
+model com_precificacao_faixa {
+  id              Int       @id @default(autoincrement())
+  tabela_preco    String    @db.VarChar(20)
+  custo_min       Decimal   @db.Decimal(15, 2)
+  custo_max       Decimal?  @db.Decimal(15, 2)
+  markup_min_pct  Decimal   @db.Decimal(8, 4)
+  markup_max_pct  Decimal   @db.Decimal(8, 4)
+  vigencia_inicio DateTime  @db.Timestamp(6)
+  vigencia_fim    DateTime? @db.Timestamp(6)
+  criado_por      String    @db.VarChar(120)
+  criado_em       DateTime  @default(now()) @db.Timestamp(6)
+  encerrado_por   String?   @db.VarChar(120)
+  encerrado_em    DateTime? @db.Timestamp(6)
+  motivo          String?
+
+  @@index([tabela_preco, vigencia_inicio], map: "idx_com_precificacao_faixa_historico")
+}
+
+// US-043 / T-030 — série histórica da taxa de exceção da triagem (insumo de M5).
+//
+// Grão: UMA execução da triagem de UMA nota/pedido. Reprocessar o mesmo pedido gera
+// linha NOVA de propósito — a série É a sucessão das medições. Não há unique key de
+// negócio: a idempotência do projeto vale para importação e fila, não para métrica.
+//
+// por_motivo é JSONB com a decomposição por motivo (ContagemMotivoDto[]); as chaves
+// são as sete do conjunto fechado, garantidas pelo TIPO no código
+// (dto/triagem-nota.dto.ts), não por constraint.
+//
+// DDL MANUAL (sql/2026-07-30_precificacao_triagem_execucao.sql) — ENTREGUE E AINDA
+// NÃO APLICADA. Aqui rodar apenas `npx prisma generate`, nunca `prisma migrate`.
+// Enquanto a DDL não for aplicada a triagem funciona por inteiro: a escrita é
+// best-effort e a resposta declara a indisponibilidade da série.
+model com_precificacao_triagem_execucao {
+  id                    Int      @id @default(autoincrement())
+  pedido_id             String   @db.VarChar(40)
+  chave_nfe             String?  @db.VarChar(44)
+  for_codigo            Int?
+  itens                 Int
+  automaticos           Int
+  excecoes              Int
+  taxa_excecao_pct      Decimal  @db.Decimal(7, 4)
+  meta_pct              Decimal  @db.Decimal(7, 4)
+  dentro_da_meta        Boolean
+  excecoes_sem_proposta Int      @default(0)
+  por_motivo            Json     @db.JsonB
+  triado_em             DateTime @db.Timestamp(6)
+  criado_em             DateTime @default(now()) @db.Timestamp(6)
+
+  @@index([triado_em(sort: Desc)], map: "idx_com_precificacao_triagem_execucao_serie")
+  @@index([pedido_id, triado_em(sort: Desc)], map: "idx_com_precificacao_triagem_execucao_pedido")
 }

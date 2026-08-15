@@ -1202,7 +1202,7 @@ export class VinculacaoNfeRepository {
    * Para um lote de chaves de NF, resolve o CT-e que a transporta (em com_cte_documento,
    * via dados_json->'documentosNFe'). Um registro por chave (o melhor: com rastreio /
    * mais recente). `em_movimento` = CT-e coberto pelo SSW com rastreio (em trânsito).
-   * Leitura do schema do calculadora-st-service no mesmo Postgres.
+   * Leitura do schema do fiscal-service no mesmo Postgres.
    */
   async findTransporteByChaves(chavesNfe: string[]): Promise<
     Array<{

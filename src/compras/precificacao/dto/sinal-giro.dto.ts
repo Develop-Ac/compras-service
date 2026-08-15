@@ -12,22 +12,33 @@ export type MetricaGiro = 'giro_real' | 'giro_esperado';
 
 /**
  * Frescura da materialização que originou os números:
- * - `fresco`             — idade ≤ `JANELA_FRESCURA_HORAS`;
- * - `obsoleto`           — idade > `JANELA_FRESCURA_HORAS` (o motor trata como exceção);
+ * - `fresco`             — idade < `JANELA_FRESCURA_HORAS`;
+ * - `obsoleto`           — idade ≥ `JANELA_FRESCURA_HORAS` (o motor trata como exceção);
  * - `sem-materializacao` — o produto não tem linha em `com_fifo_completo`.
  */
 export type FrescorGiro = 'fresco' | 'obsoleto' | 'sem-materializacao';
 
 /**
- * **Janela de frescura aceitável da materialização de `com_fifo_completo`: 24 horas.**
+ * **Janela de frescura aceitável da materialização de `com_fifo_completo`: 72 horas.**
  *
  * O ETL do `analise-estoque-service` materializa a tabela por processamento
- * (`data_processamento`). A US-039 declara que "materialização com mais de 1 dia" é dado
- * velho — daí 24h. Acima disso o sinal continua sendo devolvido (nunca se inventa número
- * nem se esconde o dado), porém marcado `frescor: 'obsoleto'` para o motor de preço tratar
- * como exceção e o extrato de decisão exibir a idade ao aprovador.
+ * (`data_processamento`). A US-039 escreveu "mais de 1 dia é dado velho" e a T-022 traduziu
+ * isso em 24h — número que a **cadência real medida** desmentiu: os runs de 2026-07-26 14:06
+ * e 2026-07-29 15:25 estão a **~3 dias** um do outro
+ * (DATA_MODEL#idade-do-saldo-em-estoque-sinal-de-performance-validado-em-2026-07-29). Com 24h,
+ * **todo** produto ficaria permanentemente `obsoleto` entre dois ciclos do ETL — um alerta que
+ * dispara sempre não é alerta, e o aprovador aprenderia a ignorá-lo. Corrigido para **72h**
+ * (retro-04): a janela passa a cobrir um ciclo do ETL, e `obsoleto` volta a significar "o ETL
+ * atrasou", que é a informação útil.
+ *
+ * Limite **inclusivo**: `idade ≥ 72h` já é obsoleto. Atingir a janela cheia significa que o
+ * ciclo esperado do ETL fechou sem dado novo — exatamente o que se quer sinalizar.
+ *
+ * Acima da janela o sinal continua sendo devolvido (nunca se inventa número nem se esconde o
+ * dado), marcado `frescor: 'obsoleto'` e `dado_desatualizado: true`, com o valor da janela
+ * **declarado no retorno** (`janela_frescura_horas`) — nunca implícito no código do consumidor.
  */
-export const JANELA_FRESCURA_HORAS = 24;
+export const JANELA_FRESCURA_HORAS = 72;
 
 /**
  * Mapa único das duas métricas de giro e das colunas que as sustentam em cada escopo —
@@ -101,28 +112,32 @@ export class MetricaGiroDto {
   campo_origem!: string;
 }
 
-/** Contexto de tendência que acompanha o giro (mesma materialização). */
-export class TendenciaGiroDto {
-  @ApiPropertyOptional({ example: 1.18, nullable: true })
-  fator_tendencia!: number | null;
-
-  @ApiPropertyOptional({ example: 'ALTA', nullable: true })
-  rotulo!: string | null;
-
-  @ApiPropertyOptional({
-    description: 'Vendas dos últimos 12 meses no escopo do sinal.',
-    example: 1240.5,
-    nullable: true,
-  })
-  vendas_ult_12m!: number | null;
-
-  @ApiPropertyOptional({
-    description: 'Vendas dos 12 meses anteriores no escopo do sinal.',
-    example: 1051.0,
-    nullable: true,
-  })
-  vendas_12m_ant!: number | null;
-}
+/**
+ * ## `TendenciaGiroDto` foi REMOVIDO do contrato (T-025, retro-04)
+ *
+ * O objeto `tendencia` expunha quatro campos; **três deles vieram `null` nos 36 produtos da
+ * demo em produção da sprint-04**: `fator_tendencia`, `rotulo` (`tendencia_label`) e
+ * `vendas_12m_ant`. As colunas existem em `com_fifo_completo`, mas o ETL do
+ * `analise-estoque-service` **não as calcula** — logo o contrato prometia um sinal de tendência
+ * que nunca chega. Campo exposto e sempre vazio é pior que campo ausente: o consumidor escreve
+ * tratamento de `null` para um caso que é 100% dos casos, e o aprovador lê "sem tendência" como
+ * informação quando é só lacuna de ETL.
+ *
+ * **Decisão: remover os três do contrato.** O único campo do grupo que o ETL de fato preenche,
+ * `vendas_ult_12m`, sobe para o próprio `SinalGiroDto` — um total absoluto de vendas não é
+ * "tendência", e mantê-lo dentro de um envelope chamado `tendencia` sozinho seria rotular
+ * errado o que restou.
+ *
+ * **Alternativa descartada:** manter os três campos e pedir o cálculo ao
+ * `analise-estoque-service` (dono da escrita da tabela). Descartada por três razões: (a) move
+ * uma fronteira de serviço para fora do escopo desta sprint, exigindo trabalho no backlog de
+ * outro dono, com prazo que a US-041 não controla; (b) mesmo entregue, tendência é sinal
+ * **redundante** aqui — a US-041 decide performance pelo par giro real × giro esperado e, na
+ * falta de giro, pela idade do saldo, nenhum dos dois derivado de tendência; (c) até a entrega,
+ * o contrato continuaria mentindo. Se o ETL passar a calcular as colunas e algum caso de uso
+ * pedir tendência, reintroduzir é aditivo e barato — o inverso (remover campo que consumidores
+ * já leem) não é.
+ */
 
 /** Sinal de performance de UM produto, com a idade da materialização que o originou. */
 export class SinalGiroDto {
@@ -185,8 +200,15 @@ export class SinalGiroDto {
   })
   giro!: MetricaGiroDto[];
 
-  @ApiProperty({ type: TendenciaGiroDto })
-  tendencia!: TendenciaGiroDto;
+  @ApiPropertyOptional({
+    description:
+      'Vendas dos últimos 12 meses no escopo efetivo do sinal (`grp_vendas_ult_12m` no escopo ' +
+      'grupo, `vendas_ult_12m` no escopo produto). Único sobrevivente do antigo objeto ' +
+      '`tendencia` — os outros três campos foram removidos por vir sempre nulos (ver acima).',
+    example: 1240.5,
+    nullable: true,
+  })
+  vendas_ult_12m!: number | null;
 
   @ApiPropertyOptional({
     description: 'Tempo médio em estoque do produto, em dias (`tempo_medio_estoque`).',
@@ -226,8 +248,10 @@ export class SinalGiroDto {
   frescor!: FrescorGiro;
 
   @ApiProperty({
-    description: 'Janela de frescura aceitável da materialização, em horas.',
-    example: 24,
+    description:
+      'Janela de frescura aceitável da materialização, em horas — declarada no retorno para o ' +
+      'consumidor não replicar o número.',
+    example: JANELA_FRESCURA_HORAS,
   })
   janela_frescura_horas!: number;
 

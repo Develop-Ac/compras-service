@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenQueryService } from '../../shared/database/openquery/openquery.service';
 
+/** Cotação é do atacado. O mesmo PRO_CODIGO existe nas 3 empresas do ERP. */
+const EMPRESA = 3;
+
 type PedidoCotacaoRow = {
   pedido_cotacao: number;
   emissao: Date | string | null;
@@ -29,23 +32,21 @@ export class ItensRepository {
   async getUltimaCompra(proCodigo: string | number) {
     // A tabela com_cotacao_itens_for está no SQL Server,
     // portanto NÃO deve ser acessada via OPENQUERY/CONSULTA.
+    const codigo = Number(proCodigo);
+    if (!Number.isInteger(codigo)) return { dt_ultima_compra: null };
+
     const fbSql = `
-        Select
-        pro.dt_ultima_compra,
-        pro.pro_codigo
-        from produtos pro
-        where pro.pro_codigo = ${proCodigo}
+        SELECT FIRST 1
+               PRO.DT_ULTIMA_COMPRA, PRO.PRO_CODIGO
+        FROM PRODUTOS PRO
+        WHERE PRO.EMPRESA = ${EMPRESA} AND PRO.PRO_CODIGO = ${codigo}
     `;
 
     const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
 
     try {
       const rows = await this.mssql.query<PedidoCotacaoRow>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
-      console.log(rows);
-      // Filtra pelo proCodigo
-      const item = rows.find(
-        row => String(row.PRO_CODIGO) === String(proCodigo)
-      );
+      const item = rows[0];
 
       // Pega a data ou null
       const dt = item?.DT_ULTIMA_COMPRA ?? item?.dt_ultima_compra ?? null;

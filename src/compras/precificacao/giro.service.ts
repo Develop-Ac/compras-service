@@ -6,7 +6,6 @@ import {
   METRICAS_GIRO,
   MetricaGiroDto,
   SinalGiroDto,
-  TendenciaGiroDto,
 } from './dto/sinal-giro.dto';
 import { GiroMaterializadoRow, GiroRepository } from './giro.repository';
 
@@ -49,12 +48,27 @@ const MAX_CODIGOS_LOTE = 500;
  * giro" em `ARCHITECTURE.md`, onde também fica declarada a janela de frescura.
  *
  * ---
- * ## Janela de frescura: 24 horas
+ * ## Janela de frescura: 72 horas (corrigida na T-025)
  *
- * `JANELA_FRESCURA_HORAS = 24`. Acima disso o sinal **continua sendo devolvido** — nunca se
- * esconde o dado nem se inventa número —, marcado `frescor: 'obsoleto'` e
- * `dado_desatualizado: true`, com `idade_horas`/`idade_dias` explícitos para o extrato de
- * decisão mostrar ao aprovador.
+ * `JANELA_FRESCURA_HORAS = 72`, e não 24 como a T-022 entregou. A cadência real do ETL foi
+ * **medida** em ~3 dias entre execuções (runs de 2026-07-26 14:06 e 2026-07-29 15:25), então a
+ * janela de 24h marcava **todo** produto como obsoleto entre dois ciclos — alerta que dispara
+ * sempre não informa nada. Detalhe da decisão e do limite inclusivo (`idade ≥ janela` já é
+ * obsoleto) em `sinal-giro.dto.ts`.
+ *
+ * Acima da janela o sinal **continua sendo devolvido** — nunca se esconde o dado nem se inventa
+ * número —, marcado `frescor: 'obsoleto'` e `dado_desatualizado: true`, com
+ * `idade_horas`/`idade_dias` explícitos e `janela_frescura_horas` declarado no próprio retorno.
+ *
+ * ---
+ * ## Tendência removida do contrato (T-025)
+ *
+ * O objeto `tendencia` saiu do `SinalGiroDto`: três dos seus quatro campos
+ * (`fator_tendencia`, `tendencia_label`, `vendas_12m_ant`) vieram `null` nos 36 produtos da
+ * demo da sprint-04 porque o ETL não os calcula, embora as colunas existam. Sobrou
+ * `vendas_ult_12m`, promovido a campo próprio. Justificativa completa e alternativa descartada
+ * em `sinal-giro.dto.ts`. O `giro.repository.ts` **continua** selecionando as colunas — o
+ * recorte de leitura não é contrato de API, e mexer nele estaria fora do escopo da T-025.
  *
  * ---
  * ## Escopo do número
@@ -146,7 +160,7 @@ export class GiroService {
         grupo_qtd_itens: agrupamentoMaterializado ? (linha?.grupo_qtd_itens ?? null) : null,
         agrupamento_materializado: agrupamentoMaterializado,
         giro: METRICAS_GIRO.map((meta) => this.montarMetrica(meta, escopo, linha)),
-        tendencia: this.montarTendencia(escopo, linha),
+        vendas_ult_12m: this.vendasUlt12m(escopo, linha),
         tempo_medio_estoque_dias: linha?.tempo_medio_estoque ?? null,
         materializado_em: materializadoEm ? materializadoEm.toISOString() : null,
         idade_horas: idadeHoras,
@@ -191,25 +205,13 @@ export class GiroService {
     return escopo === 'grupo' ? linha.grupo_demanda_dia : linha.demanda_planejamento_dia;
   }
 
-  private montarTendencia(
-    escopo: EscopoGiro,
-    linha: GiroMaterializadoRow | null,
-  ): TendenciaGiroDto {
-    if (!linha) {
-      return {
-        fator_tendencia: null,
-        rotulo: null,
-        vendas_ult_12m: null,
-        vendas_12m_ant: null,
-      };
-    }
-    const doGrupo = escopo === 'grupo';
-    return {
-      fator_tendencia: linha.fator_tendencia,
-      rotulo: linha.tendencia_label,
-      vendas_ult_12m: doGrupo ? linha.grp_vendas_ult_12m : linha.vendas_ult_12m,
-      vendas_12m_ant: doGrupo ? linha.grp_vendas_12m_ant : linha.vendas_12m_ant,
-    };
+  /**
+   * Vendas 12m no escopo efetivo — o que sobrou do antigo objeto `tendencia`, por ser o único
+   * campo do grupo que o ETL de fato preenche.
+   */
+  private vendasUlt12m(escopo: EscopoGiro, linha: GiroMaterializadoRow | null): number | null {
+    if (!linha) return null;
+    return escopo === 'grupo' ? linha.grp_vendas_ult_12m : linha.vendas_ult_12m;
   }
 
   private idadeHoras(materializadoEm: Date | null, agora: Date): number | null {
@@ -219,9 +221,13 @@ export class GiroService {
     return Math.round(Math.max(0, horas) * 100) / 100;
   }
 
+  /**
+   * Limite **inclusivo**: `idade ≥ JANELA_FRESCURA_HORAS` é obsoleto. Atingir a janela cheia
+   * significa que o ciclo esperado do ETL (~72h medidas) fechou sem dado novo.
+   */
   private frescor(idadeHoras: number | null): FrescorGiro {
     if (idadeHoras == null) return 'sem-materializacao';
-    return idadeHoras > JANELA_FRESCURA_HORAS ? 'obsoleto' : 'fresco';
+    return idadeHoras >= JANELA_FRESCURA_HORAS ? 'obsoleto' : 'fresco';
   }
 
   private normalizarCodigo(v: unknown): number | null {

@@ -1,7 +1,8 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": "src",
-  "testRegex": ".*\\.spec\\.ts$",
+  "rootDir": ".",
+  "roots": ["<rootDir>/src", "<rootDir>/test"],
+  "testRegex": ".*\\.(spec|int-spec)\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": ["ts-jest", {
       "tsconfig": {
@@ -10,17 +11,18 @@
     }]
   },
   "collectCoverageFrom": [
-    "**/*.(t|j)s",
+    "src/**/*.(t|j)s",
     "!**/*.spec.ts",
+    "!**/*.int-spec.ts",
     "!**/*.interface.ts",
     "!**/*.dto.ts",
     "!**/*.types.ts",
     "!**/main.ts"
   ],
-  "coverageDirectory": "../coverage",
+  "coverageDirectory": "<rootDir>/coverage",
   "testEnvironment": "node",
-  "setupFilesAfterEnv": ["../test/setup.ts"],
-  "moduleNameMapping": {
-    "^@/(.*)$": "<rootDir>/$1"
+  "setupFilesAfterEnv": ["<rootDir>/test/setup.ts"],
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/src/$1"
   }
 }

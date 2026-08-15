@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OpenQueryService } from 'src/shared/database/openquery/openquery.service';
 
+/** Cotação é do atacado. O mesmo PRO_CODIGO existe nas 3 empresas do ERP. */
+const EMPRESA = 3;
+
 @Injectable()
 export class CotacaoRepository {
   constructor(
@@ -18,18 +21,26 @@ export class CotacaoRepository {
   }
 
   async getInfoItens(pro_codigo: number) {
+    const codigo = Number(pro_codigo);
+    if (!Number.isInteger(codigo)) {
+      return { PRO_CODIGO: null, PRO_DESCRICAO: null, MAR_DESCRICAO: null, UNIDADE: null, REFERENCIA: null };
+    }
+
+    // A marca fica em MARCAS; PRODUTOS guarda só o MAR_CODIGO.
     const fbSql = `
-      SELECT *
-      FROM produtos pro
-      WHERE pro.pro_codigo = ${pro_codigo}
+      SELECT FIRST 1
+             PRO.PRO_CODIGO, PRO.PRO_DESCRICAO, PRO.UNIDADE, PRO.REFERENCIA,
+             MAR.MAR_DESCRICAO
+      FROM PRODUTOS PRO
+      LEFT JOIN MARCAS MAR ON MAR.EMPRESA = PRO.EMPRESA AND MAR.MAR_CODIGO = PRO.MAR_CODIGO
+      WHERE PRO.EMPRESA = ${EMPRESA} AND PRO.PRO_CODIGO = ${codigo}
     `;
 
     const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
 
     try {
       const rows = await this.mssql.query<any>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
-      const item = rows.find(row => String(row.PRO_CODIGO) === String(pro_codigo));
-      console.log(item);
+      const item = rows[0];
       return {
         PRO_CODIGO: item?.PRO_CODIGO,
         PRO_DESCRICAO: item?.PRO_DESCRICAO,

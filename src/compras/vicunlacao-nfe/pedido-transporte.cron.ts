@@ -8,7 +8,7 @@ import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
  *  - sincroniza os campos de transportadora (nomeFrete/frete/categoriaFrete) a partir
  *    do(s) CT-e(s) das NFs vinculadas;
  *  - recalcula o status, fazendo o pedido entrar/sair de 'Em Trânsito' conforme o
- *    rastreio do CT-e (atualizado pelo cron de rastreio do calculadora-st-service).
+ *    rastreio do CT-e (atualizado pelo cron de rastreio do fiscal-service).
  *
  * Config por env:
  *  - PEDIDO_TRANSPORTE_CRON: expressão cron (default a cada 35 min, após o SSW).

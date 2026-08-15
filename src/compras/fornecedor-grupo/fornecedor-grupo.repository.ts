@@ -357,7 +357,7 @@ export class FornecedorGrupoRepository {
 
     const fb = `SELECT FIRST 1 c.cli_codigo, c.cli_nome, c.cpf_cnpj
                 FROM clientes c
-                WHERE c.cpf_cnpj = '${cnpjFb}'`;
+                WHERE c.empresa = ${EMPRESA} AND c.cpf_cnpj = '${cnpjFb}'`;
     const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
     const rows = await this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
     const r = rows[0];
