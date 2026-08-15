@@ -2,12 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-<<<<<<< HEAD
-import { ErpApiModule } from './shared/erp-api/erp-api.module';
-=======
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
-
->>>>>>> 8a5c4fec92569d8a3e867045becd0399f8f364c2
+import { ErpApiModule } from './shared/erp-api/erp-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';

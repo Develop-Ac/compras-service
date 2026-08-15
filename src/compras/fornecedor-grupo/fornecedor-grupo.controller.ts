@@ -16,14 +16,14 @@ export class FornecedorGrupoController {
   }
 
   @Get('fornecedores')
-  @ApiOperation({ summary: 'Busca fornecedores no ERP (Stage_Fornecedores) por nome/CNPJ/código' })
+  @ApiOperation({ summary: 'Busca fornecedores no cadastro do ERP por nome/nome fantasia/CNPJ/código' })
   async buscar(@Query('q') q: string) {
     const data = await this.service.buscarFornecedores(q ?? '');
     return { data, total: data.length };
   }
 
   @Get('fornecedor/:for_codigo')
-  @ApiOperation({ summary: 'Cadastro completo de um fornecedor (Stage_Fornecedores) — aba Fornecedor' })
+  @ApiOperation({ summary: 'Cadastro completo de um fornecedor no ERP — aba Fornecedor' })
   async fornecedor(@Param('for_codigo') forCodigo: string) {
     const n = Number(forCodigo);
     if (!Number.isFinite(n)) return null;
