@@ -6,7 +6,9 @@ import { FornecedorGrupoService } from './fornecedor-grupo.service';
 import { FornecedorGrupoRepository } from './fornecedor-grupo.repository';
 
 @Module({
-  // PrismaModule -> PrismaService; OpenQueryModule -> OpenQueryService (SQL Server BI / Stage_Fornecedores)
+  // PrismaModule -> PrismaService; OpenQueryModule -> OpenQueryService (SQL Server
+  // BI / Stage_Fornecedores, hoje só o plano B). O ErpApiService — caminho
+  // principal de leitura do cadastro — vem do ErpApiModule, que é @Global.
   imports: [PrismaModule, OpenQueryModule],
   controllers: [FornecedorGrupoController],
   providers: [FornecedorGrupoService, FornecedorGrupoRepository],

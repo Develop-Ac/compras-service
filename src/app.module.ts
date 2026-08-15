@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ErpApiModule } from './shared/erp-api/erp-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,8 +23,13 @@ import { GarantiaModule } from './compras/garantia/garantia.module';
 
 @Module({
 imports: [
+    // Global: o ErpApiService lê ERP_API_URL/TOKEN e não deve depender de qual
+    // outro módulo chamou forRoot antes dele.
+    ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    // Leitura do ERP sem passar pelo SQL Server (global, como o OpenQuery).
+    ErpApiModule,
     OpenQueryHttpModule,
     CotacaoModule,
     FornecedorModule,
