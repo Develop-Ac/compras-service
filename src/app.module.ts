@@ -2,7 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+<<<<<<< HEAD
 import { ErpApiModule } from './shared/erp-api/erp-api.module';
+=======
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+
+>>>>>>> 8a5c4fec92569d8a3e867045becd0399f8f364c2
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,6 +25,7 @@ import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
 import { GarantiaModule } from './compras/garantia/garantia.module';
+import { CompraCasadaModule } from './compras/compra-casada/compra-casada.module';
 
 @Module({
 imports: [
@@ -44,6 +50,11 @@ imports: [
     VinculacaoNfeModule,
     FornecedorGrupoModule,
     GarantiaModule,
+    CompraCasadaModule,
+
+    PrometheusModule.register({
+      defaultMetrics: { enabled: true }, // CPU, memória, event loop, GC
+    }),
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -58,7 +69,8 @@ imports: [
       { path: 'compras', module: PedidosLogsModule },
       { path: 'compras', module: VinculacaoNfeModule },
       { path: 'compras', module: FornecedorGrupoModule },
-      { path: 'compras', module: GarantiaModule }
+      { path: 'compras', module: GarantiaModule },
+      { path: 'compras', module: CompraCasadaModule }
     ]),
   ],
   controllers: [AppController],

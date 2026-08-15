@@ -46,6 +46,9 @@ sql
 .temp
 .tmp
 
+# dumps JSON de inspeção (dumpJson)
+/debug
+
 # Runtime data
 pids
 *.pid

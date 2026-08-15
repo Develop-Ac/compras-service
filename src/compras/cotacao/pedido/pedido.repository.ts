@@ -205,7 +205,7 @@ export class PedidoRepository {
     return tx.com_pedido.upsert({
       where: { pedido_cotacao_for_codigo: { pedido_cotacao, for_codigo } },
       create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise' },
-      update: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise' },
+      update: { pedido_cotacao, for_codigo, prazo },
     });
   }
 
@@ -256,6 +256,14 @@ export class PedidoRepository {
       })
     );
     return pedidosWithItens;
+  }
+
+  async findNameFonecedorByForCodigo(for_codigo: number) {
+    const fornecedor = await this.prisma.com_fornecedores.findFirst({
+      where: { for_codigo },
+      select: { for_nome: true },
+    });
+    return fornecedor?.for_nome ?? null;
   }
   
   async findByIdWithAll(id: string) {

@@ -158,6 +158,20 @@ export class PedidoService {
       }
     }
 
+    // Adiciona o nome do fornecedor (for_nome) em cada registro
+    const nomesCache = new Map<number, string | null>();
+    for (const item of result) {
+      const forCodigo = Number(item?.for_codigo);
+      if (!Number.isFinite(forCodigo)) {
+        item.for_nome = item?.for_nome ?? null;
+        continue;
+      }
+      if (!nomesCache.has(forCodigo)) {
+        nomesCache.set(forCodigo, await this.repo.findNameFonecedorByForCodigo(forCodigo));
+      }
+      item.for_nome = nomesCache.get(forCodigo) ?? null;
+    }
+
     return result;
   }
 
