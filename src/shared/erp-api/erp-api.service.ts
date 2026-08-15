@@ -240,7 +240,11 @@ export class ErpApiService {
             empresa,
             campos: CAMPOS_LISTA,
             f: `FOR_CODIGO:em:${lote.join(',')}`,
-            limite: lote.length,
+            // +1 de folga: a API marca `truncado` quando o número de linhas
+            // bate exatamente no limite. Pedindo o tamanho exato do lote, TODA
+            // consulta completa voltaria marcada como truncada — e o aviso que
+            // deveria significar "faltou linha" viraria ruído no log.
+            limite: lote.length + 1,
           },
           { checarTruncado: false },
         ),
@@ -263,7 +267,7 @@ export class ErpApiService {
         empresa,
         campos: CAMPOS_CADASTRO,
         f: `FOR_CODIGO:igual:${forCodigo}`,
-        limite: 1,
+        limite: 2, // 1 linha esperada; a folga evita o falso "truncado" no log
       },
       { checarTruncado: false },
     );
