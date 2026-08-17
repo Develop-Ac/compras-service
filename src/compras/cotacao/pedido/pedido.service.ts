@@ -138,7 +138,11 @@ export class PedidoService {
       for (const syncItem of (syncForn.itens ?? [])) {
         const exists = itens.some((i: any) => Number(i.pro_codigo) === Number(syncItem.pro_codigo));
         if (!exists) {
-          itens.push(syncItem);
+          itens.push({
+            ...syncItem,
+            ipi: syncItem.ipi != null ? Number(syncItem.ipi) : null,
+            icms: syncItem.icms ?? null,
+          });
         }
       }
 
@@ -190,6 +194,8 @@ export class PedidoService {
             ...item,
             min: (item as any).qtd_sugerida_min ?? null,
             max: (item as any).qtd_sugerida_max ?? null,
+            ipi: item.ipi === null ? null : Number(item.ipi),
+            icms: item.icms ?? null,
             pro_descricao: (item.pro_descricao ?? ''),
             custo_fabrica: itemFormatado.get(item.pro_codigo)?.custo_fabrica ?? null,
           };
@@ -735,6 +741,8 @@ export class PedidoService {
             i.preco_custo != null ? new Prisma.Decimal(i.preco_custo) : null,
           for_codigo,
           quantidade: new Prisma.Decimal(i.quantidade as any),
+          ipi: i.ipi != null ? new Prisma.Decimal(i.ipi) : null,
+          icms: i.icms ?? null,
           justificativa: i.justificativa ?? null,
           quantidade_real: true
         }));

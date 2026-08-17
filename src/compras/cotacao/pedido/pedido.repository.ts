@@ -251,6 +251,8 @@ export class PedidoRepository {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           }),
+          ipi: item.ipi === null ? null : Number(item.ipi),
+          icms: item.icms ?? null,
         }));
         return { ...pedido, itens: itensFormatados };
       })
