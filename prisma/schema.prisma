@@ -79,6 +79,7 @@ model ofi_checklists {
   assinatura_retirada_base64   String?
   dataHoraEntrega              DateTime?
   assinaturaRetiradaBase64     String?
+  clientId                     String?                  @unique
   ofi_checklists_avarias       ofi_checklists_avarias[]
   ofi_checklists_fotos         ofi_checklists_fotos[]
   ofi_checklists_items         ofi_checklists_items[]
@@ -146,39 +147,35 @@ model com_cotacao_itens_for {
   valor_unitario Float?
   qtd_sugerida   Int?            @default(0)
   ref_fornecedor String?         @db.VarChar(255)
+  observacao     String?         @db.VarChar(255)
+  ipi            Decimal?        @db.Decimal(10, 2)
+  icms           Boolean?
   cotacao        com_cotacao_for @relation(fields: [pedido_cotacao, for_codigo], references: [pedido_cotacao, for_codigo], onDelete: Cascade)
 
   @@index([pedido_cotacao, for_codigo])
 }
 
 model com_pedido {
-  id             String             @id @default(cuid())
-  pedido_cotacao Int
-  for_codigo     Int
-  created_at     DateTime           @default(now())
-  updated_at     DateTime           @updatedAt
-  frete          Decimal?           @db.Decimal(10, 2)
-  prazo          String?            @db.VarChar(100)
-  nomeFrete      String?            @db.VarChar(255)
-  status         String?            @db.VarChar(50)
-  categoriaFrete String?            @db.VarChar(255)
-  data_recebimento DateTime?
-  // Quando true, o valor unitário do pedido já inclui o IPI; a conferência soma
-  // o IPI por unidade da NF ao valor faturado antes de comparar (evita divergência).
-  ipi_no_valor   Boolean            @default(false)
-  // Status do pedido antes de virar 'Vínculo sugerido'; usado para reverter ao
-  // rejeitar a sugestão (volta a ser elegível ao auto-vínculo de outras NFs).
-  status_anterior String?           @db.VarChar(50)
-  // Resumo de GARANTIA do fornecedor do pedido (contas a receber IC/RET em
-  // aberto). Persistido para a listagem/aviso; o detalhe é recomputado ao vivo
-  // na aba Garantia. Preenchido ao gerar/salvar o pedido e pelo seed. DDL manual.
-  tem_garantia           Boolean   @default(false)
+  id                     String                   @id @default(cuid())
+  pedido_cotacao         Int
+  for_codigo             Int
+  created_at             DateTime                 @default(now())
+  updated_at             DateTime                 @updatedAt
+  frete                  Decimal?                 @db.Decimal(10, 2)
+  prazo                  String?                  @db.VarChar(100)
+  nomeFrete              String?                  @db.VarChar(255)
+  status                 String?                  @db.VarChar(50)
+  categoriaFrete         String?                  @db.VarChar(255)
+  data_recebimento       DateTime?
+  ipi_no_valor           Boolean                  @default(false)
+  status_anterior        String?                  @db.VarChar(50)
+  tem_garantia           Boolean                  @default(false)
   garantia_qtd_titulos   Int?
   garantia_qtd_produtos  Int?
-  garantia_valor         Decimal?  @db.Decimal(15, 2)
-  garantia_verificada_em DateTime?
-  itens          com_pedido_itens[]
-  nfe_vinculos   com_pedido_nfe_vinculo[]
+  garantia_valor         Decimal?                 @db.Decimal(15, 2)
+  garantia_verificada_em DateTime?                @db.Timestamp(6)
+  itens                  com_pedido_itens[]
+  nfe_vinculos           com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
@@ -206,13 +203,12 @@ model com_pedido_itens {
   justificativa    String?    @db.VarChar(100)
   qtd_sugerida_min Decimal?   @db.Decimal(15, 4)
   qtd_sugerida_max Decimal?   @db.Decimal(15, 4)
-  // Status manual do item no fechamento do pedido. NULL = pendente/normal (fluxo
-  // atual). 'nao_atendido' = "Não Atendido pelo Fornecedor": item baixado pelo
-  // comprador (fornecedor SEM carteira) — deixa de travar o status do pedido e
-  // deixa de marcar "produto já em pedido" na nova cotação. DDL manual.
   status_item      String?    @db.VarChar(30)
   status_item_por  String?    @db.VarChar(120)
-  status_item_em   DateTime?
+  status_item_em   DateTime?  @db.Timestamp(6)
+  quantidade_real  Boolean    @default(false)
+  ipi              Decimal?   @db.Decimal(10, 2)
+  icms             Boolean?
   pedido           com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
 
   @@unique([pedido_id, pro_codigo, for_codigo])
@@ -221,24 +217,22 @@ model com_pedido_itens {
 }
 
 model com_pedido_nfe_vinculo {
-  id              String     @id @default(cuid())
-  pedido_id       String     // FK com_pedido.id (contexto da tela do pedido)
-  pedido_cotacao  Int
-  for_codigo      Int?
-  chave_nfe       String     @db.VarChar(44)
-  emitente        String?
-  data_emissao    DateTime?
-  valor_total     Decimal?   @db.Decimal(15, 2)
-  usuario         String?    @db.VarChar(120)
-  confirmado      Boolean    @default(true)
-  // Sugestão automática rejeitada pelo usuário: a linha é mantida (não apagada)
-  // para que o auto-vínculo NÃO sugira a mesma NF p/ este pedido de novo.
-  rejeitado       Boolean    @default(false)
-  origem_vinculo  String     @default("manual") @db.VarChar(20)
-  created_at      DateTime   @default(now())
-  updated_at      DateTime   @updatedAt
-  pedido          com_pedido @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
-  itens           com_pedido_nfe_vinculo_item[]
+  id             String                        @id @default(cuid())
+  pedido_id      String
+  pedido_cotacao Int
+  for_codigo     Int?
+  chave_nfe      String                        @db.VarChar(44)
+  emitente       String?
+  data_emissao   DateTime?
+  valor_total    Decimal?                      @db.Decimal(15, 2)
+  usuario        String?                       @db.VarChar(120)
+  created_at     DateTime                      @default(now())
+  updated_at     DateTime                      @updatedAt
+  confirmado     Boolean                       @default(true)
+  origem_vinculo String                        @default("manual") @db.VarChar(20)
+  rejeitado      Boolean                       @default(false)
+  pedido         com_pedido                    @relation(fields: [pedido_id], references: [id], onDelete: Cascade)
+  itens          com_pedido_nfe_vinculo_item[]
 
   @@unique([pedido_id, chave_nfe])
   @@index([pedido_id])
@@ -246,29 +240,25 @@ model com_pedido_nfe_vinculo {
 }
 
 model com_pedido_nfe_vinculo_item {
-  id                  String   @id @default(cuid())
-  vinculo_id          String
-  tipo                String   @db.VarChar(20) // 'vinculado' | 'xml_sem_vinculo' | 'pedido_sem_vinculo'
-  // dados do lado XML
-  produto_xml         String?
-  cprod_xml           String?
-  quantidade_xml      Decimal? @db.Decimal(15, 4)
-  vuncom_xml          Decimal? @db.Decimal(15, 4)
-  // dados do lado pedido/cotação
-  pro_codigo          Int?
-  pro_descricao       String?
-  quantidade_cotacao  Decimal? @db.Decimal(15, 4)
-  quantidade_pedido   Decimal? @db.Decimal(15, 4)
-  valor_pedido        Decimal? @db.Decimal(15, 4)
-  // saldo: quanto DESTE pedido foi alocado do item da NF (quantidade_xml = qCom total, informativo)
-  quantidade_alocada  Decimal? @db.Decimal(15, 4)
-  excede_saldo        Boolean  @default(false)
-  // metadados do casamento
-  match_campo         String?  @db.VarChar(60)
-  match_valor         String?
-  origem              String?  @db.VarChar(20) // 'auto' | 'manual'
-  created_at          DateTime @default(now())
-  vinculo             com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
+  id                 String                 @id @default(cuid())
+  vinculo_id         String
+  tipo               String                 @db.VarChar(20)
+  produto_xml        String?
+  cprod_xml          String?
+  quantidade_xml     Decimal?               @db.Decimal(15, 4)
+  vuncom_xml         Decimal?               @db.Decimal(15, 4)
+  pro_codigo         Int?
+  pro_descricao      String?
+  quantidade_cotacao Decimal?               @db.Decimal(15, 4)
+  quantidade_pedido  Decimal?               @db.Decimal(15, 4)
+  valor_pedido       Decimal?               @db.Decimal(15, 4)
+  match_campo        String?                @db.VarChar(60)
+  match_valor        String?
+  origem             String?                @db.VarChar(20)
+  created_at         DateTime               @default(now())
+  quantidade_alocada Decimal?               @db.Decimal(15, 4)
+  excede_saldo       Boolean                @default(false)
+  vinculo            com_pedido_nfe_vinculo @relation(fields: [vinculo_id], references: [id], onDelete: Cascade)
 
   @@index([vinculo_id])
 }
@@ -299,6 +289,8 @@ model est_contagem {
   piso              String?            @db.VarChar
   status            Int                @default(0)
   tipo              Int                @default(1)
+  data_inicio       DateTime?
+  data_fim          DateTime?
   usuario           sis_usuarios       @relation(fields: [colaborador], references: [id])
   logs              est_contagem_log[]
 
@@ -323,10 +315,12 @@ model est_contagem_itens {
   contagem_cuid      String
   aplicacoes         String?
   identificador_item String?            @db.VarChar
+  pendente           Boolean            @default(false)
   logs               est_contagem_log[]
 
   @@index([contagem_cuid])
   @@index([cod_produto])
+  @@index([pendente])
 }
 
 model est_contagem_log {
@@ -418,46 +412,6 @@ model com_fifo_completo {
   categoria_saldo_atual      String?   @db.VarChar(50)
   pro_referencia             String?
 
-  // Colunas materializadas pelo ETL do analise-estoque-service (dono da escrita desta
-  // tabela) e consumidas pelo modulo de precificacao (O6 / EP-012). Ja existiam no banco;
-  // faltavam apenas na declaracao Prisma deste servico, o que quebrava o build no CI
-  // (o client local havia sido gerado de uma versao do schema que as declarava).
-  // Somente leitura: este servico nunca escreve em com_fifo_completo.
-  grupo_chave                String?   @db.VarChar(255)
-  grupo_qtd_itens            Int?
-  demanda_planejamento_dia   Decimal?  @db.Decimal(15, 6)
-  grupo_demanda_dia          Decimal?  @db.Decimal(15, 6)
-  preco_venda_1              Decimal?  @db.Decimal(15, 4)
-  preco_venda_2              Decimal?  @db.Decimal(15, 4)
-
-  // Colunas de CUSTO/MARGEM materializadas pelo ETL do analise-estoque-service (dono da
-  // escrita desta tabela). DDL manual em `sql/2026-07-29_custo_fifo.sql` daquele servico —
-  // as tres ultimas nasceram ali; `custo_unitario`, `margem_unitaria` e `margem_pct` sao
-  // anteriores e o script apenas as recomentou por mudanca de semantica. Ja existiam no
-  // banco; faltavam na declaracao Prisma deste servico. Tipos conferidos em
-  // `information_schema.columns` (2026-07-29) — nao inferidos.
-  // Somente leitura: este servico nunca escreve em com_fifo_completo.
-  //
-  // Semantica corrigida em 2026-07-29 (DATA_MODEL#semantica-do-custo-em-com_fifo_completo):
-  // - custo_unitario: custo FIFO do estoque VIVO (media ponderada por qtd das camadas
-  //   residuais). Ate 2026-07-29 continha o custo medio das vendas 12m, hoje em
-  //   custo_cogs_12m. **NULL e ausencia de custo no ERP, nunca "de graca"** — 6.975
-  //   produtos passaram de 0,00 para NULL; consumidor precisa tratar NULL.
-  // - margem_unitaria / margem_pct: margem PROSPECTIVA (preco realizado 12m - custo do
-  //   estoque hoje). A base retrospectiva antiga vive em margem_unitaria_realizada.
-  // - custo_cogs_12m: custo medio ponderado do que FOI VENDIDO em 12m (COGS/qtd) — base da
-  //   margem realizada; nao e o custo do estoque.
-  // - custo_fonte: degrau da cadeia de custo (`camada_viva` | `ultima_entrada` | `cadastro`
-  //   | NULL) — sinal de confiabilidade do custo.
-  // - margem_unitaria_realizada: preco realizado 12m - custo_cogs_12m (base antiga de
-  //   margem_unitaria).
-  custo_unitario             Decimal?  @db.Decimal(15, 4)
-  margem_unitaria            Decimal?  @db.Decimal(15, 4)
-  margem_pct                 Decimal?  @db.Decimal(8, 4)
-  custo_cogs_12m             Decimal?  @db.Decimal(15, 4)
-  custo_fonte                String?   @db.VarChar(20)
-  margem_unitaria_realizada  Decimal?  @db.Decimal(15, 4)
-
   @@index([teve_alteracao_analise], map: "idx_com_fifo_alteracao")
   @@index([categoria_estocagem], map: "idx_com_fifo_categoria_estocagem")
   @@index([categoria_saldo_atual], map: "idx_com_fifo_categoria_saldo_atual")
@@ -465,6 +419,12 @@ model com_fifo_completo {
   @@index([data_processamento], map: "idx_com_fifo_data_processamento")
   @@index([group_id], map: "idx_com_fifo_group_id")
   @@index([pro_codigo], map: "idx_com_fifo_pro_codigo")
+  @@index([classe_xyz], map: "idx_com_fifo_classe_xyz")
+  @@index([eh_original], map: "idx_com_fifo_eh_original")
+  @@index([grupo_chave], map: "idx_com_fifo_grupo_chave")
+  @@index([teve_outlier_aparado], map: "idx_com_fifo_outlier")
+  @@index([padrao_demanda], map: "idx_com_fifo_padrao_demanda")
+  @@index([sob_encomenda], map: "idx_com_fifo_sob_encomenda")
 }
 
 model com_kanban {
@@ -519,7 +479,6 @@ model com_nfe_conciliacao {
   status_analise           String                     @default("Tributado - Verificado")
   valor_guia               Float                      @default(0.0)
   status_erp               String                     @default("PENDENTE")
-  dt_entrada               DateTime?
   updated_at               DateTime
   created_at               DateTime                   @default(now())
   tipo_operacao            Int                        @default(0)
@@ -527,6 +486,13 @@ model com_nfe_conciliacao {
   tipo_imposto             String?                    @db.VarChar(50)
   compra_comercializacao   Boolean                    @default(false)
   uso_consumo              Boolean                    @default(false)
+  dt_entrada               DateTime?                  @db.Timestamp(6)
+  mva_verificado_em        DateTime?                  @db.Timestamptz(6)
+  mva_alerta_enviado_em    DateTime?                  @db.Timestamptz(6)
+  mva_maior                Decimal?                   @db.Decimal(7, 4)
+  auditoria_fiscal_em      DateTime?                  @db.Timestamptz(6)
+  auditoria_fiscal_status  String?                    @db.VarChar(20)
+  auditoria_alerta_em      DateTime?                  @db.Timestamptz(6)
   com_nfe_conciliacao_item com_nfe_conciliacao_item[]
 }
 
@@ -797,7 +763,16 @@ model sac_kanban {
   etapa              String
   updatedAt          DateTime             @db.Timestamptz(6)
   imagem             String?
+  devolucao          String?
+  notaOuCupomFiscal  String?
+  notaDevolucao      String?
+  credito            String?
+  numeroDacte        String?
+  devolutivaSac      String?
+  responsavel        String?              @db.VarChar(255)
+  telefone           String?              @db.VarChar(20)
   sac_kanban_imagens sac_kanban_imagens[]
+  sac_kanban_minion  sac_kanban_minion[]
 }
 
 model sac_kanban_imagens {
@@ -805,7 +780,15 @@ model sac_kanban_imagens {
   kanban_id  String
   imagem     String
   created_at DateTime?  @default(now()) @db.Timestamptz(6)
+  storage    String     @default("base64")
+  tipo       String     @default("imagem")
+  mime_type  String?
+  nome       String?
+  tamanho    Int?
+  bucket     String?
   sac_kanban sac_kanban @relation(fields: [kanban_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([kanban_id], map: "ix_sac_kanban_imagens_kanban")
 }
 
 model sis_feriados {
@@ -949,10 +932,6 @@ model com_produto_fornecedor_referencia {
   data       DateTime? @default(now()) @db.Timestamp(6)
   codigo     String?   @db.VarChar(255)
 
-  // Suporta o catalogoRefs (enriquecimento de referências): filtro por
-  // (fornecedor, codigo) + DISTINCT ON (fornecedor, codigo) ORDER BY data DESC.
-  // Sem ele, a query faz full scan + sort de ~154k linhas (~2s por vínculo).
-  // Índice aplicado manualmente no banco (ver SQL entregue).
   @@index([fornecedor, codigo, data], map: "idx_cpfr_forn_cod_data")
 }
 
@@ -962,41 +941,27 @@ model com_fornecedores {
   for_nome   String @db.VarChar(255)
 }
 
-// Parâmetros de COMPRA por fornecedor (lead time, revisão, pedido mínimo).
-// Preenchidos na tela /compras/fornecedores (aba Parâmetros de Compra) — uma
-// linha por for_codigo (os membros do grupo herdam os valores no salvamento).
-// Lidos pelo analise-estoque-service: lead_time/revisão entram no cálculo do
-// mínimo; pedido_minimo_valor alimenta o alerta da tela Comprar Agora.
-// DDL aplicado MANUALMENTE (ver sql/2026-07-03_fornecedor_parametros.sql no
-// analise-estoque-service) — rodar apenas `npx prisma generate` aqui.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model com_fornecedor_parametros {
   id                  Int       @id @default(autoincrement())
-  for_codigo          Int       @unique(map: "com_fornecedor_parametros_for_codigo_key")
+  for_codigo          Int       @unique
   for_nome            String    @db.VarChar(255)
   lead_time_dias      Int?
   tempo_revisao_dias  Int?
   pedido_minimo_valor Decimal?  @db.Decimal(15, 2)
-  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
-  // Fornecedor trabalha com CARTEIRA (backorder): quando true, o item de pedido
-  // não faturado fica pendente indefinidamente (comportamento antigo). Quando
-  // false (padrão), após lançar a(s) NF o comprador resolve os itens que ficaram
-  // de fora, marcando-os como "Não Atendido pelo Fornecedor". DDL manual.
-  trabalha_carteira   Boolean   @default(false)
   updated_at          DateTime? @default(now()) @db.Timestamp(6)
   updated_by          String?   @db.VarChar(100)
+  pedido_minimo_qtd   Decimal?  @db.Decimal(15, 2)
+  trabalha_carteira   Boolean   @default(false)
 }
 
 model com_fornecedor_relacionamento {
-  id         String    @id @db.VarChar(191)
-  group_id   String    @db.VarChar(100)
-  for_codigo Int       @unique(map: "uq_forn_rel_for_codigo")
-  principal  Boolean   @default(false)
-  // Quando true, os produtos deste fornecedor/grupo trazem a REFERÊNCIA no FINAL
-  // da descrição (ex.: ARTEB: "... MARCA ARTEB - 460405"), e não no código. O
-  // match de NF-e extrai esse número do xProd e casa contra a referência da cotação.
-  // Basta um membro do grupo com a flag para o grupo inteiro ser tratado assim.
-  ref_descricao Boolean @default(false)
-  created_at DateTime? @default(now()) @db.Timestamp(6)
+  id            String    @id @db.VarChar(191)
+  group_id      String    @db.VarChar(100)
+  for_codigo    Int       @unique(map: "uq_forn_rel_for_codigo")
+  principal     Boolean   @default(false)
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  ref_descricao Boolean   @default(false)
 
   @@index([group_id], map: "idx_forn_rel_group")
 }
@@ -1091,83 +1056,4 @@ model ven_venda_casada_itens {
   prazo      String? @db.VarChar(100)
   fornecedor String? @db.VarChar(255)
   marca      String? @db.VarChar(255)
-}
-
-// Régua de margem das três tabelas de preço — CONFIGURÁVEL EM DADO (US-040 / T-024).
-// Uma linha por (tabela_preco, faixa de custo); intervalo MEIO-ABERTO
-// [custo_min, custo_max), com custo_max = custo_min da faixa seguinte e NULL =
-// infinito na última. Cobertura total por construção: nenhum custo fica sem faixa
-// (AC3), inclusive custo com mais de duas casas vindo de divisão por quantidade.
-// Consequência declarada: 400,00 cai em 99,01–400,00 e 400,01 já cai na regra de
-// "acima de 400,00" — a mesma que vale para um custo de R$ 500,00.
-//
-// Versionamento append-only: alterar faixa NÃO faz UPDATE dos limites — fecha a
-// linha vigente (vigencia_fim/encerrado_por/encerrado_em) e insere outra. A tabela
-// é o próprio histórico auditável exigido pelo DoD ("quem alterou, quando").
-//
-// A não-monotonicidade entre as duas últimas faixas do varejo (110% → 150%) é
-// INTENCIONAL (PRD#escopo) — não existe constraint comparando faixas vizinhas.
-//
-// markup_min_pct/markup_max_pct em Decimal(8,4), a MESMA precisão de
-// com_fifo_completo.margem_pct (total 8, não 15 — medido na T-023): teto de
-// 9999,9999%. A régua de hoje chega a 1000%, sem conflito.
-//
-// A UNICIDADE da faixa vigente é um índice PARCIAL
-// (uq_com_precificacao_faixa_vigente ... WHERE vigencia_fim IS NULL), não
-// representável no schema Prisma — vive só na DDL; aqui declara-se o índice de
-// histórico. Não usar findUnique por (tabela_preco, custo_min): as linhas
-// encerradas repetem a combinação.
-//
-// DDL aplicado MANUALMENTE (sql/2026-07-30_precificacao_faixas.sql) — rodar apenas
-// `npx prisma generate` aqui.
-model com_precificacao_faixa {
-  id              Int       @id @default(autoincrement())
-  tabela_preco    String    @db.VarChar(20)
-  custo_min       Decimal   @db.Decimal(15, 2)
-  custo_max       Decimal?  @db.Decimal(15, 2)
-  markup_min_pct  Decimal   @db.Decimal(8, 4)
-  markup_max_pct  Decimal   @db.Decimal(8, 4)
-  vigencia_inicio DateTime  @db.Timestamp(6)
-  vigencia_fim    DateTime? @db.Timestamp(6)
-  criado_por      String    @db.VarChar(120)
-  criado_em       DateTime  @default(now()) @db.Timestamp(6)
-  encerrado_por   String?   @db.VarChar(120)
-  encerrado_em    DateTime? @db.Timestamp(6)
-  motivo          String?
-
-  @@index([tabela_preco, vigencia_inicio], map: "idx_com_precificacao_faixa_historico")
-}
-
-// US-043 / T-030 — série histórica da taxa de exceção da triagem (insumo de M5).
-//
-// Grão: UMA execução da triagem de UMA nota/pedido. Reprocessar o mesmo pedido gera
-// linha NOVA de propósito — a série É a sucessão das medições. Não há unique key de
-// negócio: a idempotência do projeto vale para importação e fila, não para métrica.
-//
-// por_motivo é JSONB com a decomposição por motivo (ContagemMotivoDto[]); as chaves
-// são as sete do conjunto fechado, garantidas pelo TIPO no código
-// (dto/triagem-nota.dto.ts), não por constraint.
-//
-// DDL MANUAL (sql/2026-07-30_precificacao_triagem_execucao.sql) — ENTREGUE E AINDA
-// NÃO APLICADA. Aqui rodar apenas `npx prisma generate`, nunca `prisma migrate`.
-// Enquanto a DDL não for aplicada a triagem funciona por inteiro: a escrita é
-// best-effort e a resposta declara a indisponibilidade da série.
-model com_precificacao_triagem_execucao {
-  id                    Int      @id @default(autoincrement())
-  pedido_id             String   @db.VarChar(40)
-  chave_nfe             String?  @db.VarChar(44)
-  for_codigo            Int?
-  itens                 Int
-  automaticos           Int
-  excecoes              Int
-  taxa_excecao_pct      Decimal  @db.Decimal(7, 4)
-  meta_pct              Decimal  @db.Decimal(7, 4)
-  dentro_da_meta        Boolean
-  excecoes_sem_proposta Int      @default(0)
-  por_motivo            Json     @db.JsonB
-  triado_em             DateTime @db.Timestamp(6)
-  criado_em             DateTime @default(now()) @db.Timestamp(6)
-
-  @@index([triado_em(sort: Desc)], map: "idx_com_precificacao_triagem_execucao_serie")
-  @@index([pedido_id, triado_em(sort: Desc)], map: "idx_com_precificacao_triagem_execucao_pedido")
 }

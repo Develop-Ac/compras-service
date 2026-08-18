@@ -60,6 +60,42 @@ export class CotacaoRepository {
     }
   }
 
+  /**
+   * Busca, em UMA consulta ao SQL Server BI, os dados de vários produtos de uma
+   * vez, lendo direto da Stage `Stage_Produtos` (ETL ~1 min do ERP) — sem ir ao
+   * Firebird via OPENQUERY. Usado para completar `referencia`/`unidade` que
+   * chegam vazias das telas intranet ("Comprar Agora"/Análise). A Stage tem a
+   * coluna `REFERENCIA` (mesma do ERP, e mais completa) e é `EMPRESA=3`.
+   */
+  async getProdutosInfo(
+    empresa: number,
+    codigos: number[],
+  ): Promise<Map<number, { referencia: string | null; unidade: string | null }>> {
+    const ids = Array.from(new Set(codigos.filter((c) => Number.isFinite(c)))).map((c) => Math.trunc(c));
+    if (!ids.length) return new Map();
+
+    const inList = ids.join(',');
+    const tsql = `
+      SELECT PRO_CODIGO, REFERENCIA, UNIDADE
+      FROM Stage_Produtos
+      WHERE EMPRESA = ${Math.trunc(empresa)}
+        AND PRO_CODIGO IN (${inList})
+    `;
+
+    const rows = await this.mssql.query<any>(tsql, {}, { timeout: 30_000, allowZeroRows: true });
+
+    const map = new Map<number, { referencia: string | null; unidade: string | null }>();
+    for (const r of rows || []) {
+      const code = Number(r.PRO_CODIGO ?? r.pro_codigo);
+      if (!Number.isFinite(code)) continue;
+      map.set(code, {
+        referencia: r.REFERENCIA ?? r.referencia ?? null,
+        unidade: r.UNIDADE ?? r.unidade ?? null,
+      });
+    }
+    return map;
+  }
+
   async insertNewItemCotacao(
     PRO_CODIGO: number,
     PRO_DESCRICAO: string,

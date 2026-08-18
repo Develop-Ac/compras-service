@@ -194,6 +194,12 @@ AWS_BUCKET_NAME=seu_bucket
 # OpenQuery / ERP Integration
 ERP_CONNECTION_STRING="Server=servidor;Database=database;User=user;Password=pass;"
 
+# Leitura do ERP pela erp-firebird-api (sem passar pelo SQL Server)
+# VAZIO = a tela de fornecedores volta a ler Stage_Fornecedores.
+ERP_API_URL=http://intranet_api-firebird-consulta:8014
+ERP_API_TOKEN=            # mesmo token dos outros serviços (header x-app-token)
+ERP_API_TIMEOUT_MS=30000  # opcional, default 30000
+
 # Security
 JWT_SECRET=seu_jwt_secret_muito_seguro
 BCRYPT_ROUNDS=12
@@ -201,6 +207,33 @@ BCRYPT_ROUNDS=12
 # Application Token Middleware
 APP_TOKEN=seu_token_de_aplicacao
 ```
+
+### Tela de fornecedores: cadastro vivo em vez de cópia (agosto/2026)
+
+A tela lia tudo de `[BI].[dbo].[Stage_Fornecedores]` — uma cópia que o ETL
+atualiza de tempos em tempos. Fornecedor recém-cadastrado, ou corrigido no ERP,
+só aparecia na carga seguinte, e a tela não tinha como dizer isso: para quem
+estava procurando, o cadastro simplesmente não existia.
+
+Agora a leitura é do `FORNECEDORES` do Firebird, pela **erp-firebird-api**.
+
+| Método (`fornecedor-grupo.repository.ts`) | Rota |
+|---|---|
+| `buscarFornecedores` | `/erp/fornecedores/busca` |
+| `fornecedoresPorCodigo` | `/erp/fornecedores` (`FOR_CODIGO:em`) |
+| `fornecedorCompleto` | `/erp/fornecedores` (`FOR_CODIGO:igual`, agrupável) |
+| `sugerirFiliais` | `/erp/fornecedores/filiais` |
+| `clienteDoFornecedor` | `/erp/clientes/documento` |
+| `buscarClientes` | `/erp/clientes/busca` |
+
+As duas últimas iam ao Firebird por `OPENQUERY(CONSULTA)`: saem do caminho do
+SQL Server junto, já que estão na mesma tela.
+
+Toda chamada tem o caminho antigo como alternativa. Se a API não responder, a
+leitura volta pelo Stage (ou pelo OPENQUERY) e o log diz o motivo
+(`ENOTFOUND`, `ECONNREFUSED`, certificado…). Depois de 3 falhas seguidas o
+cliente pausa 60s, para não pagar o timeout inteiro em cada consulta enquanto a
+API está fora. Sem `ERP_API_URL`, nada muda de comportamento.
 
 ### Configuração do PostgreSQL
 

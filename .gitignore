@@ -1,6 +1,7 @@
 # compiled output
 /node_modules
 /dist
+/.claude/
 
 # Logs
 *.log
@@ -43,6 +44,9 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# dumps JSON de inspeção (dumpJson)
+/debug
 
 # Runtime data
 pids

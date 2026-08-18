@@ -27,6 +27,9 @@ type NextFornecedor = {
     emissao: string | null;
     valor_unitario: string | null;
     ref_fornecedor: string | null;
+    observacao: string | null;
+    ipi: string | number | null;
+    icms: boolean | string | number | null;
   }>;
 };
 
@@ -64,6 +67,25 @@ export class CotacaoSyncService {
     const n = Number(trimmed);
     if (!Number.isFinite(n) || n < 0) throw new HttpException(`${label} inválido: ${v}`, 400);
     return n;
+  }
+
+  /** Converte o IPI recebido do Next (decimal em número ou string 'pt-BR'/'en-US') para número. */
+  private parseIpi(v: string | number | null | undefined): number | null {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    return this.parseMoney('IPI', v);
+  }
+
+  /** Converte o ICMS recebido do Next (boolean, 'true'/'false', 'S'/'N', 0/1) para boolean. */
+  private parseIcms(v: boolean | string | number | null | undefined): boolean | null {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const t = v.trim().toLowerCase();
+    if (t === '') return null;
+    if (['true', 't', '1', 's', 'sim', 'y', 'yes'].includes(t)) return true;
+    if (['false', 'f', '0', 'n', 'nao', 'não', 'no'].includes(t)) return false;
+    return null;
   }
 
   /**
@@ -199,7 +221,7 @@ export class CotacaoSyncService {
       ? data
       : [];
 
-    console.log(fornecedores[0].itens)
+    // console.log(fornecedores[0].itens)
 
     // 2) Persistir local (espelho)
     if (fornecedores.length > 0) {
@@ -218,7 +240,10 @@ export class CotacaoSyncService {
           quantidade: this.parseIntStrict('QUANTIDADE', i.quantidade),
           qtd_sugerida: Number(i.qtd_sugerida),
           valor_unitario: this.parseMoney('VALOR_UNITARIO', i.valor_unitario) ?? null,
-          ref_fornecedor: i.ref_fornecedor
+          ref_fornecedor: i.ref_fornecedor ?? null,
+          observacao: i.observacao ?? null,
+          ipi: this.parseIpi(i.ipi),
+          icms: this.parseIcms(i.icms),
         })),
       }));
       await this.repo.upsertFornecedorComItensTx(mapped);
@@ -248,6 +273,15 @@ export class CotacaoSyncService {
           ...it,
           // Garantir que valor_unitario seja retornado como número decimal formatado
           valor_unitario: this.formatMoneyValue(it.valor_unitario),
+          // 🧾 IPI (decimal) e ICMS (bool) vindos do Next e espelhados localmente
+          ipi:
+            (it as { ipi?: unknown }).ipi != null
+              ? Number((it as { ipi?: unknown }).ipi)
+              : null,
+          icms:
+            (it as { icms?: unknown }).icms != null
+              ? Boolean((it as { icms?: unknown }).icms)
+              : null,
           // 🔁 retornando custo_fabrica/custo_medio/estoque_disponivel do ERP formatados
           custo_fabrica: this.formatMoneyValue(extra.custo_fabrica),
           custo_medio: this.formatMoneyValue(extra.custo_medio),

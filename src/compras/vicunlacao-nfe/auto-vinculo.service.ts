@@ -186,6 +186,17 @@ export class AutoVinculoService {
         `${sugestoesCriadas} nova(s), ${sugestoesPendentes} pendente(s).`,
     );
 
+    // Notifica (igual à varredura) quando o botão sob demanda cria sugestão NOVA.
+    if (sugestoesCriadas > 0) {
+      this.avisos.emitirSistema({
+        chave: 'compras.nfe.sugestao',
+        ref: pedido.id,
+        tela: '/compras/notaFiscal/notaFiscal',
+        variaveis: { pedido: pedido.pedido_cotacao, count: sugestoesCriadas },
+        link: `/compras/cotacao/pedido?pedido=${pedido.pedido_cotacao}`,
+      });
+    }
+
     return {
       pedido_id: pedidoId,
       sugestoes_criadas: sugestoesCriadas,

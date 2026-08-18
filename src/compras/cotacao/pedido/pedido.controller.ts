@@ -11,14 +11,15 @@ import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
 import { UpdateItemJustificativaDto } from './dto/update-item-justificativa.dto';
 import express from 'express';
 import type { Response as ExpressResponse } from 'express';
-import { 
-  ApiOperation, 
-  ApiTags, 
-  ApiParam, 
-  ApiQuery, 
-  ApiOkResponse, 
+import {
+  ApiOperation,
+  ApiTags,
+  ApiParam,
+  ApiQuery,
+  ApiOkResponse,
   ApiCreatedResponse,
   ApiBadRequestResponse,
+  ApiBody,
   ApiProduces
 } from '@nestjs/swagger';
 
@@ -228,9 +229,68 @@ export class PedidoController {
   }
 
   @Post()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Cria ou atualiza pedido',
-    description: 'Cria um novo pedido ou atualiza um existente'
+    description:
+      'Cria um novo pedido ou atualiza um existente. Idempotente por pedido_cotacao + for_codigo: ' +
+      'os itens são agrupados por fornecedor e, se o pedido já existir, os itens são apagados e recriados.'
+  })
+  @ApiBody({
+    type: CreatePedidoDto,
+    examples: {
+      exemplo: {
+        summary: 'Pedido com dois itens de fornecedores distintos',
+        value: {
+          pedido_cotacao: 1042,
+          usuario: 'gabriel',
+          itens: [
+            {
+              id: 'cm123abc',
+              pro_codigo: 10523,
+              pro_descricao: 'PALHETA LIMPADOR 16"',
+              mar_descricao: 'DYNA',
+              referencia: 'DY-1602',
+              unidade: 'PC',
+              emissao: '2026-08-01T00:00:00.000Z',
+              valor_unitario: 24.9,
+              custo_fabrica: 18.35,
+              preco_custo: 21.7,
+              ipi: 9.75,
+              icms: true,
+              for_codigo: 4312,
+              frete: 150.5,
+              prazo: '30/60/90',
+              nomeFrete: 'Transportadora XYZ',
+              quantidade: 120,
+              qtd_sugerida_min: 80,
+              qtd_sugerida_max: 200,
+              justificativa: 'Compra antecipada por reajuste',
+            },
+            {
+              pro_codigo: 20871,
+              pro_descricao: 'FILTRO DE OLEO',
+              mar_descricao: 'TECFIL',
+              referencia: 'PSL-560',
+              unidade: 'PC',
+              emissao: null,
+              valor_unitario: 12.4,
+              custo_fabrica: null,
+              preco_custo: null,
+              ipi: 0,
+              icms: false,
+              for_codigo: 5120,
+              frete: 0,
+              prazo: '28 DDL',
+              nomeFrete: 'CIF',
+              quantidade: 60,
+              qtd_sugerida_min: 50,
+              qtd_sugerida_max: 90,
+              justificativa: null,
+            },
+          ],
+        },
+      },
+    },
   })
   @ApiCreatedResponse({
     description: 'Pedido criado/atualizado com sucesso'

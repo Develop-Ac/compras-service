@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { ErpApiModule } from './shared/erp-api/erp-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -18,12 +21,16 @@ import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
 import { GarantiaModule } from './compras/garantia/garantia.module';
-import { PrecificacaoModule } from './compras/precificacao/precificacao.module';
 
 @Module({
 imports: [
+    // Global: o ErpApiService lê ERP_API_URL/TOKEN e não deve depender de qual
+    // outro módulo chamou forRoot antes dele.
+    ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    // Leitura do ERP sem passar pelo SQL Server (global, como o OpenQuery).
+    ErpApiModule,
     OpenQueryHttpModule,
     CotacaoModule,
     FornecedorModule,
@@ -38,7 +45,6 @@ imports: [
     VinculacaoNfeModule,
     FornecedorGrupoModule,
     GarantiaModule,
-    PrecificacaoModule,
 
     // ⬇️ Prefixa *somente* esses módulos com /compras
     RouterModule.register([
@@ -53,8 +59,7 @@ imports: [
       { path: 'compras', module: PedidosLogsModule },
       { path: 'compras', module: VinculacaoNfeModule },
       { path: 'compras', module: FornecedorGrupoModule },
-      { path: 'compras', module: GarantiaModule },
-      { path: 'compras', module: PrecificacaoModule }
+      { path: 'compras', module: GarantiaModule }
     ]),
   ],
   controllers: [AppController],
