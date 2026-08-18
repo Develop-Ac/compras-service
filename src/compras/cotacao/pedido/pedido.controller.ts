@@ -9,8 +9,7 @@ import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
 import { TransportadoraDto } from './dto/transportadora.dto';
 import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
 import { UpdateItemJustificativaDto } from './dto/update-item-justificativa.dto';
-import express from 'express';
-import type { Response as ExpressResponse } from 'express';
+import type { FastifyReply } from 'fastify';
 import {
   ApiOperation,
   ApiTags,
@@ -47,7 +46,7 @@ export class PedidoController {
       },
     },
   })
-  async excel(@Param('id') id: string, @Res() res: ExpressResponse) {
+  async excel(@Param('id') id: string, @Res() res: FastifyReply) {
     await this.service.gerarExcel(res, id);
   }
 
@@ -132,7 +131,7 @@ export class PedidoController {
   async pdf(
     @Param('id') id: string,
     @Query('marca') marca: string | undefined,
-    @Res() res: ExpressResponse, // << mesmo tipo que o service espera
+    @Res() res: FastifyReply, // << mesmo tipo que o service espera
   ) {
     const showMarca =
       marca == null ? true : /^(true|1|on|yes)$/i.test(String(marca).trim());

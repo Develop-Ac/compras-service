@@ -1,6 +1,7 @@
 // src/pedido/pedido.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Response as ExpressResponse } from 'express';
+import type { FastifyReply } from 'fastify';
+import { PassThrough } from 'stream';
 import { Prisma, sis_feriados } from '@prisma/client';
 import { PedidoRepository } from './pedido.repository';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
@@ -323,7 +324,7 @@ export class PedidoService {
     return results;
   }
 
-  async gerarExcel(res: ExpressResponse, id: string) {
+  async gerarExcel(res: FastifyReply, id: string) {
     const pedido = await this.repo.findByIdWithItens(id);
 
     if (!pedido) throw new NotFoundException('Pedido não encontrado');
@@ -353,15 +354,20 @@ export class PedidoService {
       });
     }
 
-    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.set('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.header('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
 
-    await workbook.xlsx.write(res as unknown as import('stream').Writable);
-    res.end();
+    // No Fastify o streaming é feito enviando um Readable para o reply,
+    // preservando os headers já definidos (inclusive os do CORS).
+    const stream = new PassThrough();
+    res.send(stream);
+
+    await workbook.xlsx.write(stream);
+    stream.end();
   }
 
   /**
-   * Gera PDF do pedido por ID (Express).
+   * Gera PDF do pedido por ID (streaming direto no reply do Fastify).
    * - Título central alinhado verticalmente ao centro da logo
    * - Bloco COMPRADOR à esquerda
    * - Sem metadados à direita (removidos)
@@ -371,7 +377,7 @@ export class PedidoService {
    * - **Novo**: Bloco FORNECEDOR (via OPENQUERY) logo abaixo do endereço do comprador
    */
   async gerarPdfPedidoExpress(
-    res: ExpressResponse,
+    res: FastifyReply,
     id: string,
     opts?: PdfOpts, // <<<<<<<<<<<<< adicionamos opts.marca
   ) {
@@ -384,12 +390,13 @@ export class PedidoService {
 
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
 
-    res.set('Content-Type', 'application/pdf');
-    res.set(
+    res.header('Content-Type', 'application/pdf');
+    res.header(
       'Content-Disposition',
       `inline; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}_id_${pedido.id}.pdf"`,
     );
-    doc.pipe(res as unknown as NodeJS.WritableStream);
+    // O Fastify faz o pipe do Readable (PDFDocument) para o socket.
+    res.send(doc);
 
     // Geometria
     const startX = doc.page.margins.left;
