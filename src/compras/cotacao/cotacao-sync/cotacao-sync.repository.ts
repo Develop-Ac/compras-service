@@ -26,6 +26,8 @@ export class CotacaoSyncRepository {
         valor_unitario: number | null;
         dt_ultima_compra?: Date | null;
         observacao: string | null;
+        ipi?: number | null;
+        icms?: boolean | null;
       }>;
     }>,
   ) {
@@ -68,6 +70,8 @@ export class CotacaoSyncRepository {
             valor_unitario: i.valor_unitario,
             observacao: i.observacao,
             dt_ultima_compra: i.dt_ultima_compra,
+            ipi: i.ipi ?? null,
+            icms: i.icms ?? null,
           }));
           if (inputs.length) { await tx.com_cotacao_itens_for.createMany({ data: inputs }); }
 
