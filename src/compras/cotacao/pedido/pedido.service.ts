@@ -342,7 +342,12 @@ export class PedidoService {
       { header: 'Valor Unitario', key: 'valor_unitario', width: 16 },
     ];
 
-    for (const it of pedido.itens) {
+    // Item com quantidade 0 não será comprado — fica fora do relatório
+    const itensExcel = pedido.itens.filter(
+      (it) => Number(it.quantidade ?? 0) > 0,
+    );
+
+    for (const it of itensExcel) {
       sheet.addRow({
       pro_codigo: it.pro_codigo,
       referencia: it.referencia ?? '',
@@ -612,7 +617,12 @@ export class PedidoService {
     let totalQtd = 0;
     let totalGeral = 0;
 
-    for (const it of pedido.itens) {
+    // Item com quantidade 0 não será comprado — fica fora do relatório
+    const itensPdf = pedido.itens.filter(
+      (it) => Number(it.quantidade ?? 0) > 0,
+    );
+
+    for (const it of itensPdf) {
       // quebra de página
       if (y > doc.page.height - doc.page.margins.bottom - 40) {
         doc.addPage();
