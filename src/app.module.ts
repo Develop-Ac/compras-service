@@ -16,7 +16,6 @@ import { S3Module } from './storage/s3.module';
 import { NotaFiscalModule } from './compras/nota fiscal/nota fiscal/notaFiscal.module';
 import { kanbanModule } from './compras/kanban/kanban.module';
 import { ItensModule } from './compras/itens/intes.module';
-import { RabbitMqModule } from './compras/cotacao/job/rabbitmq.module';
 import { PedidosLogsModule } from './compras/logs/pedidos/pedidos.module';
 import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.module';
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
@@ -42,7 +41,6 @@ imports: [
     kanbanModule,
     ItensModule,
     PedidosLogsModule,
-    RabbitMqModule,
     VinculacaoNfeModule,
     FornecedorGrupoModule,
     GarantiaModule,
