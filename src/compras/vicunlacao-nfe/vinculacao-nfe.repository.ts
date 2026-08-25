@@ -287,11 +287,13 @@ export class VinculacaoNfeRepository {
     try {
       rows = await this.erp.comFallback<Row[]>(
         async () => {
-          // O de-para do grupo é limitado; trazer tudo dos fornecedores e casar
-          // o cProd aqui evita o IN de variantes com TRIM, que a consulta livre
-          // da API não expressa.
-          const todos = (await this.erp.produtosFornecedorPorFornecedores(fors, empresa)) as Row[];
-          return todos.filter((r) => variantes.has(String(r.COD_PROD_FORNECEDOR ?? '').trim()));
+          // A rota nomeada filtra o cProd no servidor (1 fornecedor por chamada);
+          // o grupo tem poucos fornecedores, e o retorno fica no tamanho da NF.
+          const listaVariantes = [...variantes];
+          const partes = await Promise.all(
+            fors.map((f) => this.erp.referenciasFornecedorNfe(f, listaVariantes, empresa)),
+          );
+          return partes.flat() as Row[];
         },
         async () => {
           const forList = fors.join(',');
