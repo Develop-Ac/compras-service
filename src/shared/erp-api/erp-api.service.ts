@@ -394,16 +394,34 @@ export class ErpApiService {
     return partes.flat();
   }
 
-  /** De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE), por fornecedores. */
-  async produtosFornecedorPorFornecedores(forCodigos: number[], empresa: number): Promise<any[]> {
-    const lista = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))];
-    if (!lista.length) return [];
-    return this.pedir('/erp/produtos-fornecedor', {
-      empresa,
-      campos: 'FOR_CODIGO,COD_PROD_FORNECEDOR,PRO_CODIGO',
-      f: `FOR_CODIGO:em:${lista.join(',')}`,
-      limite: 5000,
-    });
+  /**
+   * De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE) de UM
+   * fornecedor, filtrado pelos códigos (cProd) no servidor — a rota nomeada
+   * resolve o espaço à direita que o ERP grava em COD_PROD_FORNECEDOR. Puxar o
+   * catálogo inteiro do fornecedor para filtrar aqui estoura o teto de linhas
+   * da tabela em fornecedor grande, e o corte silencioso perde vínculo.
+   */
+  async referenciasFornecedorNfe(
+    fornecedor: number,
+    codigos: string[],
+    empresa: number,
+  ): Promise<any[]> {
+    const lista = [...new Set(codigos.map((c) => String(c ?? '').trim()).filter(Boolean))];
+    if (!lista.length || !Number.isFinite(fornecedor)) return [];
+
+    const lotes: string[][] = [];
+    for (let i = 0; i < lista.length; i += MAX_EM) lotes.push(lista.slice(i, i + MAX_EM));
+
+    const partes = await Promise.all(
+      lotes.map((lote) =>
+        this.pedirPost(
+          '/erp/produtos-fornecedor/referencias',
+          { fornecedor, codigos: lote, empresa },
+          { checarTruncado: false },
+        ),
+      ),
+    );
+    return partes.flat();
   }
 
   /* ----------------------------- entrada fiscal ----------------------------- */
