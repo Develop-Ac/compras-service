@@ -395,19 +395,24 @@ export class ErpApiService {
   }
 
   /**
-   * De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE) de UM
-   * fornecedor, filtrado pelos códigos (cProd) no servidor — a rota nomeada
-   * resolve o espaço à direita que o ERP grava em COD_PROD_FORNECEDOR. Puxar o
-   * catálogo inteiro do fornecedor para filtrar aqui estoura o teto de linhas
-   * da tabela em fornecedor grande, e o corte silencioso perde vínculo.
+   * De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE): todos os
+   * fornecedores do grupo E os códigos (cProd) na MESMA consulta — dois `em`
+   * combinados com AND. Uma chamada por NF, retorno do tamanho da NF.
+   *
+   * Não fatiar em uma chamada por fornecedor: com dois filtros variando, o
+   * agrupador da API não une as consultas, e cada uma vira uma ida ao Firebird
+   * (um grupo grande tem dezenas de fornecedores). O `em` casa o valor mesmo
+   * com o espaço à direita que o ERP grava — a comparação do Firebird ignora
+   * o preenchimento.
    */
   async referenciasFornecedorNfe(
-    fornecedor: number,
+    forCodigos: number[],
     codigos: string[],
     empresa: number,
   ): Promise<any[]> {
+    const fors = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))].slice(0, MAX_EM);
     const lista = [...new Set(codigos.map((c) => String(c ?? '').trim()).filter(Boolean))];
-    if (!lista.length || !Number.isFinite(fornecedor)) return [];
+    if (!fors.length || !lista.length) return [];
 
     const lotes: string[][] = [];
     for (let i = 0; i < lista.length; i += MAX_EM) lotes.push(lista.slice(i, i + MAX_EM));
@@ -415,8 +420,16 @@ export class ErpApiService {
     const partes = await Promise.all(
       lotes.map((lote) =>
         this.pedirPost(
-          '/erp/produtos-fornecedor/referencias',
-          { fornecedor, codigos: lote, empresa },
+          '/erp/produtos-fornecedor/consulta',
+          {
+            empresa,
+            campos: ['FOR_CODIGO', 'COD_PROD_FORNECEDOR', 'PRO_CODIGO'],
+            filtros: [
+              { campo: 'FOR_CODIGO', op: 'em', valor: fors },
+              { campo: 'COD_PROD_FORNECEDOR', op: 'em', valor: lote },
+            ],
+            limite: 5000,
+          },
           { checarTruncado: false },
         ),
       ),
