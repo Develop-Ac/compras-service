@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument = require('pdfkit');
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../../shared/erp-api/erp-api.service';
 import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
 import { GarantiaService } from '../../garantia/garantia.service';
 
@@ -35,6 +36,7 @@ export class PedidoService {
   constructor(
     private readonly repo: PedidoRepository,
     private readonly oq: OpenQueryService,
+    private readonly erpApi: ErpApiService,
     private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
     private readonly garantia: GarantiaService,
   ) {}
@@ -186,21 +188,21 @@ export class PedidoService {
     const pedido = await this.repo.findByIdGerencial(id);
 
     if (pedido  !== null && pedido.itens  !== null) {
-      pedido.itens = await Promise.all(
-        pedido.itens.map(async (item): Promise<any> => {
-          const itemFormatado = await this.cotacaoSyncService.fetchProdutosInfoOneShot([item.pro_codigo], 3);
-
-          return {
-            ...item,
-            min: (item as any).qtd_sugerida_min ?? null,
-            max: (item as any).qtd_sugerida_max ?? null,
-            ipi: item.ipi === null ? null : Number(item.ipi),
-            icms: item.icms ?? null,
-            pro_descricao: (item.pro_descricao ?? ''),
-            custo_fabrica: itemFormatado.get(item.pro_codigo)?.custo_fabrica ?? null,
-          };
-        })
+      // Uma consulta só para todos os itens — a busca já é em lote por natureza.
+      const infoProdutos = await this.cotacaoSyncService.fetchProdutosInfoOneShot(
+        pedido.itens.map((item) => item.pro_codigo),
+        3,
       );
+
+      pedido.itens = pedido.itens.map((item): any => ({
+        ...item,
+        min: (item as any).qtd_sugerida_min ?? null,
+        max: (item as any).qtd_sugerida_max ?? null,
+        ipi: item.ipi === null ? null : Number(item.ipi),
+        icms: item.icms ?? null,
+        pro_descricao: (item.pro_descricao ?? ''),
+        custo_fabrica: infoProdutos.get(item.pro_codigo)?.custo_fabrica ?? null,
+      }));
     }
 
 
@@ -234,8 +236,22 @@ export class PedidoService {
   }
 
   private async getFornecedor(forCodigo: number): Promise<FornecedorRow | undefined> {
-    const sql = this.buildFornecedorOpenQuery(forCodigo);
-    return await this.oq.queryOne<FornecedorRow>(sql, {}, { timeout: 60_000 });
+    return this.erpApi.comFallback<FornecedorRow | undefined>(
+      async () => {
+        const r = await this.erpApi.fornecedorCompleto(forCodigo, 3);
+        if (!r) return undefined;
+        return {
+          FOR_NOME: r.FOR_NOME ?? null,
+          CELULAR: r.CELULAR ?? null,
+          FONE: r.FONE ?? null,
+          CONTATO: r.CONTATO ?? null,
+        };
+      },
+      async () => {
+        const sql = this.buildFornecedorOpenQuery(forCodigo);
+        return this.oq.queryOne<FornecedorRow>(sql, {}, { timeout: 60_000 });
+      },
+    );
   }
 
   /* ----------------------- Casos de uso ----------------------- */
@@ -267,6 +283,47 @@ export class PedidoService {
       garantia_qtd_titulos: number | null;
       garantia_qtd_produtos: number | null;
     }> = [];
+    // Nome do fornecedor resolvido UMA vez por código distinto: lote no cache
+    // local + uma única leitura do ERP para os ausentes. Resolver dentro do
+    // loop serializa uma consulta por pedido — e cada ida ao CONSULTA pode
+    // custar segundos, travando a abertura da tela.
+    const codigosForn = [
+      ...new Set(pedidos.map((p) => Number(p.for_codigo)).filter(Number.isFinite)),
+    ];
+    const nomePorCodigo = new Map<number, string | null>();
+    for (const f of await this.repo.findFornecedoresByIds(codigosForn)) {
+      nomePorCodigo.set(f.for_codigo, f.for_nome ?? null);
+    }
+
+    const faltantes = codigosForn.filter((c) => !nomePorCodigo.has(c));
+    if (faltantes.length) {
+      try {
+        // Leitura do cadastro: erp-firebird-api primeiro; OPENQUERY é o plano B.
+        const rows = await this.erpApi.comFallback<
+          Array<{ FOR_CODIGO: number; FOR_NOME: string | null }>
+        >(
+          () => this.erpApi.fornecedoresPorCodigo(faltantes, 3),
+          () =>
+            this.oq.query(
+              `SELECT FOR_CODIGO, FOR_NOME FROM OPENQUERY(CONSULTA, 'select FO.FOR_CODIGO, FO.FOR_NOME from FORNECEDORES FO where FO.EMPRESA = 3 and FO.FOR_CODIGO in (${faltantes.join(',')})')`,
+              {},
+              { timeout: 15000, allowZeroRows: true },
+            ),
+        );
+        const novos: { for_codigo: number; for_nome: string }[] = [];
+        for (const r of rows) {
+          const cod = Number(r.FOR_CODIGO);
+          // CHAR do Firebird volta preenchido com espaços até o tamanho declarado
+          const nome = String(r.FOR_NOME ?? '').trim() || null;
+          nomePorCodigo.set(cod, nome);
+          novos.push({ for_codigo: cod, for_nome: nome ?? '' });
+        }
+        await this.repo.insertFornecedores(novos);
+      } catch {
+        // Sem o ERP a listagem sai sem esses nomes; a próxima abertura tenta de novo.
+      }
+    }
+
     for (const p of pedidos) {
       let totalQtd = 0;
       let totalValor = 0;
@@ -284,23 +341,7 @@ export class PedidoService {
       const produtos_cod = codigos.join(' ').toLowerCase();
       const produtos_desc = descricoes.join(' | ').toLowerCase();
 
-      // Consulta for_nome via OPENQUERY
-      let for_nome: string | null = null;
-      try {
-
-        for_nome = await this.repo.findFornecedorById(Number(p.for_codigo));
-
-        if (for_nome === null) {
-          const sql = `SELECT FOR_NOME FROM OPENQUERY(CONSULTA, 'select FO.FOR_NOME from FORNECEDORES FO where FO.FOR_CODIGO = ${p.for_codigo} and FO.EMPRESA = 3')`;
-          const row = await this.oq.queryOne<{ FOR_NOME: string }>(sql, {}, { timeout: 10000 });
-          for_nome = row?.FOR_NOME ?? null;
-
-          await this.repo.insertNewFonecedor(for_nome ?? '', Number(p.for_codigo));
-        }
-
-      } catch {
-        for_nome = null;
-      }
+      const for_nome = nomePorCodigo.get(Number(p.for_codigo)) ?? null;
 
       results.push({
         id: p.id,

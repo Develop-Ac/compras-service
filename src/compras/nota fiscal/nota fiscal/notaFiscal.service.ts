@@ -206,14 +206,15 @@ export class NotaFiscalService {
   }
 
   async generateDanfe(chaveNfe: string): Promise<Buffer> {
-    const rawData = await this.notaFiscalRepository.fetchNfeDistribuicao();
-    const rows = chaveNfe ? rawData.filter((r) => r.CHAVE_NFE === chaveNfe) : rawData;
+    // Só o XML desta chave — listar a distribuição inteira transfere o BLOB de
+    // todas as notas pendentes para usar um.
+    const xmlCompleto = await this.notaFiscalRepository.fetchXmlDaChave(chaveNfe);
 
-    if (!rows?.[0]?.XML_COMPLETO) {
+    if (!xmlCompleto) {
       throw new Error(`Nenhum XML encontrado para a chave: ${chaveNfe}`);
     }
 
-    const xmlText = this.decodeXmlFromField(rows[0].XML_COMPLETO);
+    const xmlText = this.decodeXmlFromField(xmlCompleto);
 
     // cria .xml temporário
     const fileName = `${chaveNfe || 'nfe'}.xml`;

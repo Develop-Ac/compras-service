@@ -134,6 +134,45 @@ export class ErpApiService {
     }
   }
 
+  /** POST das rotas de consulta com corpo (consulta livre, por-chaves). */
+  private async pedirPost(
+    caminho: string,
+    corpo: Record<string, any>,
+    opts: { exigirCompleto?: boolean; checarTruncado?: boolean } = {},
+  ): Promise<any[]> {
+    try {
+      const resposta = await fetch(this.base + caminho, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-app-token': this.token,
+          'x-servico': 'compras-service',
+        },
+        body: JSON.stringify(corpo),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+
+      if (!resposta.ok) {
+        const texto = await resposta.text().catch(() => '');
+        throw new Error(`HTTP ${resposta.status} em ${caminho}: ${texto.slice(0, 300)}`);
+      }
+
+      const json = (await resposta.json()) as RespostaErp;
+      this.falhasSeguidas = 0;
+
+      if (json?.meta?.truncado && opts.checarTruncado !== false) {
+        const aviso = `${caminho} bateu no teto da tabela (${json.meta.linhas} linhas) e o resultado está INCOMPLETO`;
+        if (opts.exigirCompleto) throw new Error(aviso);
+        this.logger.warn(`[ERP-API] ${aviso} — reduza o filtro.`);
+      }
+
+      return json?.dados ?? [];
+    } catch (erro: any) {
+      this.registrarFalha(caminho, erro);
+      throw erro;
+    }
+  }
+
   /**
    * Motivo da falha em uma linha.
    *
@@ -317,5 +356,129 @@ export class ErpApiService {
       { termo, empresa, limite },
       { checarTruncado: false },
     );
+  }
+
+  /* ------------------------------- produtos -------------------------------- */
+
+  /**
+   * Produtos por código, em lote. `campos` aceita coluna de relação
+   * ("marca.MAR_DESCRICAO") — por isso a consulta vai pela rota POST.
+   */
+  async produtosPorCodigos(
+    codigos: Array<string | number>,
+    empresa: number,
+    campos: string[],
+  ): Promise<any[]> {
+    const lista = [
+      ...new Set(codigos.map((c) => Math.trunc(Number(c))).filter((n) => Number.isFinite(n))),
+    ];
+    if (!lista.length) return [];
+
+    const lotes: number[][] = [];
+    for (let i = 0; i < lista.length; i += MAX_EM) lotes.push(lista.slice(i, i + MAX_EM));
+
+    const partes = await Promise.all(
+      lotes.map((lote) =>
+        this.pedirPost(
+          '/erp/produtos/consulta',
+          {
+            empresa,
+            campos,
+            filtros: [{ campo: 'PRO_CODIGO', op: 'em', valor: lote }],
+            limite: lote.length + 1,
+          },
+          { checarTruncado: false },
+        ),
+      ),
+    );
+    return partes.flat();
+  }
+
+  /** De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE), por fornecedores. */
+  async produtosFornecedorPorFornecedores(forCodigos: number[], empresa: number): Promise<any[]> {
+    const lista = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))];
+    if (!lista.length) return [];
+    return this.pedir('/erp/produtos-fornecedor', {
+      empresa,
+      campos: 'FOR_CODIGO,COD_PROD_FORNECEDOR,PRO_CODIGO',
+      f: `FOR_CODIGO:em:${lista.join(',')}`,
+      limite: 5000,
+    });
+  }
+
+  /* ----------------------------- entrada fiscal ----------------------------- */
+
+  /**
+   * NF-e recebidas e ainda não importadas (rota nomeada /pendentes). O XML não
+   * vem junto: TEM_XML diz se existe, e o conteúdo sai por xmlPorChaves.
+   */
+  async nfeDistribuicaoPendentes(
+    empresa: number,
+    dataIni: string,
+    dataFim: string,
+  ): Promise<any[]> {
+    return this.pedir(
+      '/erp/nfe-distribuicao/pendentes',
+      { empresa, dataIni, dataFim },
+      { checarTruncado: false },
+    );
+  }
+
+  /** Linhas da NFE_DISTRIBUICAO de uma chave (emitente/data/situação — sem XML). */
+  async nfeDistribuicaoPorChave(chave: string, empresa: number): Promise<any[]> {
+    return this.pedir(
+      '/erp/nfe-distribuicao',
+      {
+        empresa,
+        campos: 'CHAVE_NFE,NOME_EMITENTE,DATA_EMISSAO,SITUACAO_NFE',
+        f: `CHAVE_NFE:igual:${String(chave ?? '').trim()}`,
+        limite: 2,
+      },
+      { checarTruncado: false },
+    );
+  }
+
+  /** XML completo por chave de acesso — a rota aceita no máximo 50 chaves por lote. */
+  async xmlPorChaves(chaves: string[], empresa: number): Promise<any[]> {
+    const lista = [...new Set(chaves.map((c) => String(c ?? '').trim()).filter(Boolean))];
+    if (!lista.length) return [];
+
+    const LOTE_XML = 50;
+    const lotes: string[][] = [];
+    for (let i = 0; i < lista.length; i += LOTE_XML) lotes.push(lista.slice(i, i + LOTE_XML));
+
+    const partes = await Promise.all(
+      lotes.map((lote) =>
+        this.pedirPost(
+          '/erp/nf-entrada-xml/por-chaves',
+          { chaves: lote, empresa },
+          { checarTruncado: false },
+        ),
+      ),
+    );
+    return partes.flat();
+  }
+
+  /* ------------------------------ faturamento ------------------------------- */
+
+  /** Itens das NFS (venda) por número de nota, em lote — usados pela aba Garantia. */
+  async nfsItensPorNotas(nfsList: number[], empresa: number): Promise<any[]> {
+    const lista = [...new Set(nfsList.filter((n) => Number.isFinite(n)))];
+    if (!lista.length) return [];
+
+    const lotes: number[][] = [];
+    for (let i = 0; i < lista.length; i += MAX_EM) lotes.push(lista.slice(i, i + MAX_EM));
+
+    const partes = await Promise.all(
+      lotes.map((lote) =>
+        this.pedir('/erp/nfs-itens', {
+          empresa,
+          campos: 'NFS,PRO_CODIGO,QUANTIDADE,UNITARIO',
+          f: `NFS:em:${lote.join(',')}`,
+          limite: 5000,
+        }),
+      ),
+    );
+    return partes.flat();
   }
 }
