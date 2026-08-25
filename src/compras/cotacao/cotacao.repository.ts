@@ -4,12 +4,19 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { OpenQueryService } from 'src/shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../shared/erp-api/erp-api.service';
+
+// Cotação e pedido são gerenciais. PRODUTOS é chaveado por (EMPRESA, PRO_CODIGO)
+// e as empresas espelham o mesmo código — sem o filtro, a leitura devolve a
+// linha de uma empresa arbitrária.
+const EMPRESA = 3;
 
 @Injectable()
 export class CotacaoRepository {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mssql: OpenQueryService
+    private readonly mssql: OpenQueryService,
+    private readonly erp: ErpApiService,
   ) {}
 
   /** Escapa aspas simples para o literal T-SQL do OPENQUERY */
@@ -18,24 +25,41 @@ export class CotacaoRepository {
   }
 
   async getInfoItens(pro_codigo: number) {
-    const fbSql = `
-      SELECT *
-      FROM produtos pro
-      WHERE pro.pro_codigo = ${pro_codigo}
-    `;
-
-    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
-
     try {
-      const rows = await this.mssql.query<any>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
-      const item = rows.find(row => String(row.PRO_CODIGO) === String(pro_codigo));
-      console.log(item);
+      const item = await this.erp.comFallback<Record<string, any> | undefined>(
+        async () => {
+          const rows = await this.erp.produtosPorCodigos([pro_codigo], EMPRESA, [
+            'PRO_CODIGO',
+            'PRO_DESCRICAO',
+            'UNIDADE',
+            'REFERENCIA',
+            'marca.MAR_DESCRICAO',
+          ]);
+          return rows[0];
+        },
+        async () => {
+          const fbSql = `
+            SELECT pro.pro_codigo, pro.pro_descricao, pro.unidade, pro.referencia,
+                   mar.mar_descricao
+            FROM produtos pro
+            LEFT JOIN marcas mar
+                   ON mar.empresa = pro.empresa
+                  AND mar.mar_codigo = pro.mar_codigo
+            WHERE pro.empresa = ${EMPRESA}
+              AND pro.pro_codigo = ${Math.trunc(Number(pro_codigo))}
+          `;
+          const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
+          const rows = await this.mssql.query<any>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
+          return rows[0];
+        },
+      );
+
       return {
-        PRO_CODIGO: item?.PRO_CODIGO,
-        PRO_DESCRICAO: item?.PRO_DESCRICAO,
-        MAR_DESCRICAO: item?.MAR_DESCRICAO,
-        UNIDADE: item?.UNIDADE,
-        REFERENCIA: item?.REFERENCIA,
+        PRO_CODIGO: item?.PRO_CODIGO ?? null,
+        PRO_DESCRICAO: item?.PRO_DESCRICAO ?? null,
+        MAR_DESCRICAO: item?.MAR_DESCRICAO ?? null,
+        UNIDADE: item?.UNIDADE ?? null,
+        REFERENCIA: item?.REFERENCIA ?? null,
       }
     } catch (error) {
       console.error('Erro ao consultar informações do item:', error);

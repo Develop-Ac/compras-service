@@ -3,7 +3,6 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { VinculacaoNfeService } from './vinculacao-nfe.service';
 import { VinculacaoNfeRepository } from './vinculacao-nfe.repository';
 import { NotaFiscalRepository } from '../nota fiscal/nota fiscal/notaFiscal.repository';
-import { ConsultaOpenqueryRepository } from '../cotacao/openquery/openquery.repository';
 import { FornecedorGrupoService } from '../fornecedor-grupo/fornecedor-grupo.service';
 import { AvisosClientService } from '../avisos/avisos-client.service';
 
@@ -47,7 +46,6 @@ export class AutoVinculoService {
     private readonly vinculacao: VinculacaoNfeService,
     private readonly repo: VinculacaoNfeRepository,
     private readonly notasRepo: NotaFiscalRepository,
-    private readonly fornecedorRepo: ConsultaOpenqueryRepository,
     private readonly grupo: FornecedorGrupoService,
     private readonly avisos: AvisosClientService,
   ) {}
@@ -109,9 +107,23 @@ export class AutoVinculoService {
 
     let sugestoesCriadas = 0;
 
+    // CNPJs dos grupos de TODOS os fornecedores da varredura numa única leitura
+    // do cadastro (API com fallback). Consultar por pedido ocupa uma conexão do
+    // pool da API por chamada, a cada ciclo do cron.
+    let cnpjsPorFornecedor = new Map<number, string[]>();
+    try {
+      cnpjsPorFornecedor = await this.grupo.cnpjsDoGrupoEmLote(
+        pedidosProcessar.map((p) => Number(p.for_codigo)),
+      );
+    } catch (err: any) {
+      this.logger.error(`Não foi possível ler os CNPJs dos fornecedores: ${err?.message || err}`);
+      return { pedidos_varridos: 0, sugestoes_criadas: 0, truncado, limite };
+    }
+
     for (const pedido of pedidosProcessar) {
       try {
-        const n = await this.processarPedido(pedido, notas);
+        const cnpjsGrupo = new Set(cnpjsPorFornecedor.get(Number(pedido.for_codigo)) ?? []);
+        const n = await this.processarPedido(pedido, notas, cnpjsGrupo);
         sugestoesCriadas += n;
         // Notifica quem tem acesso à tela quando surgem sugestões NOVAS p/ o pedido.
         // Idempotência/anti-spam por evento_chave (ref) + cooldown da regra.
@@ -214,22 +226,17 @@ export class AutoVinculoService {
       created_at: Date;
     },
     notas: NfeDisponivel[],
+    cnpjsGrupoPre?: Set<string>,
   ): Promise<number> {
     // nº de itens (pro_codigo distintos) do pedido — denominador da cobertura.
     const totalItens = await this.repo.countProCodigosDoPedido(pedido.id);
     if (totalItens === 0) return 0;
 
-    // CNPJ do fornecedor do pedido (via OpenQuery).
-    const fornecedor = await this.fornecedorRepo.findFornecedorByCodigo(
-      EMPRESA,
-      pedido.for_codigo,
-    );
-    const cnpjForn = this.soDigitos(fornecedor?.cpf_cnpj ?? null);
-
     // CNPJs do GRUPO do fornecedor (matriz/filiais relacionadas). Inclui o próprio.
     // Permite vincular NF emitida por um relacionado (ex.: pedido p/ CNPJ X, NF do CNPJ Y do mesmo grupo).
-    const cnpjsGrupo = new Set<string>(await this.grupo.cnpjsDoGrupo(pedido.for_codigo));
-    if (cnpjForn) cnpjsGrupo.add(cnpjForn);
+    // A varredura passa o conjunto pré-computado em lote; sob demanda, resolve aqui.
+    const cnpjsGrupo =
+      cnpjsGrupoPre ?? new Set<string>(await this.grupo.cnpjsDoGrupo(pedido.for_codigo));
 
     // Candidatas: emitente tem CNPJ do fornecedor OU de um relacionado do grupo,
     // E data de emissão posterior ao pedido (dentro de MAX_DIAS_DIFERENCA dias).

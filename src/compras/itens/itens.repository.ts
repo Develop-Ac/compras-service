@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenQueryService } from '../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../shared/erp-api/erp-api.service';
+
+// Cotação é gerencial; PRODUTOS espelha o código nas empresas — filtro obrigatório.
+const EMPRESA = 3;
 
 type PedidoCotacaoRow = {
   pedido_cotacao: number;
@@ -19,7 +23,10 @@ type PedidoCotacaoRow = {
 export class ItensRepository {
   private readonly logger = new Logger(ItensRepository.name);
 
-  constructor(private readonly mssql: OpenQueryService) {}
+  constructor(
+    private readonly mssql: OpenQueryService,
+    private readonly erp: ErpApiService,
+  ) {}
 
   /** Escapa aspas simples para o literal T-SQL do OPENQUERY */
   private fbLiteral(sql: string): string {
@@ -27,24 +34,28 @@ export class ItensRepository {
   }
 
   async getUltimaCompra(proCodigo: string | number) {
-    // A tabela com_cotacao_itens_for está no SQL Server,
-    // portanto NÃO deve ser acessada via OPENQUERY/CONSULTA.
-    const fbSql = `
-        Select
-        pro.dt_ultima_compra,
-        pro.pro_codigo
-        from produtos pro
-        where pro.pro_codigo = ${proCodigo}
-    `;
-
-    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
-
     try {
-      const rows = await this.mssql.query<PedidoCotacaoRow>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
-      console.log(rows);
-      // Filtra pelo proCodigo
-      const item = rows.find(
-        row => String(row.PRO_CODIGO) === String(proCodigo)
+      const item = await this.erp.comFallback<Record<string, any> | undefined>(
+        async () => {
+          const rows = await this.erp.produtosPorCodigos([proCodigo], EMPRESA, [
+            'PRO_CODIGO',
+            'DT_ULTIMA_COMPRA',
+          ]);
+          return rows[0];
+        },
+        async () => {
+          const fbSql = `
+              Select
+              pro.dt_ultima_compra,
+              pro.pro_codigo
+              from produtos pro
+              where pro.empresa = ${EMPRESA}
+                and pro.pro_codigo = ${Math.trunc(Number(proCodigo))}
+          `;
+          const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${this.fbLiteral(fbSql)}')`;
+          const rows = await this.mssql.query<PedidoCotacaoRow>(tsql, {}, { timeout: 60_000, allowZeroRows: true });
+          return rows[0];
+        },
       );
 
       // Pega a data ou null
