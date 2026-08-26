@@ -5,6 +5,7 @@ import { Body, Controller, Get, Param, Post, Put, Query, Res } from '@nestjs/com
 import { PedidoService } from './pedido.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { UpdatePrevisaoChegadaDto } from './dto/update-previsao-chegada.dto';
 import { AutorizacaoItemDto } from './dto/autorizacao-item.dto';
 import { TransportadoraDto } from './dto/transportadora.dto';
 import { UpdateItemQuantidadeDto } from './dto/update-item-quantidade.dto';
@@ -27,7 +28,7 @@ import {
 export class PedidoController {
   constructor(private readonly service: PedidoService) {}
 
-    @Get('excel/:id')
+  @Get('excel/:id')
   @ApiOperation({
     summary: 'Gera Excel do pedido',
     description: 'Gera e retorna um arquivo Excel com os itens do pedido',
@@ -320,5 +321,50 @@ export class PedidoController {
   })
   async updateStatus(@Param('id') id: string, @Body() body: UpdateStatusDto) {
     return this.service.atualizarStatus(id, body.status);
+  }
+
+  // PUT /pedido/previsao_chegada/:id -> atualiza previsão de chegada do pedido
+  @Put('previsao_chegada/:id')
+  @ApiOperation({
+    summary: 'Atualiza a previsão de chegada de um pedido',
+    description:
+      'Altera a coluna previsao_chegada da tabela com_pedido pelo id informado. Envie null para limpar.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido',
+    example: 'cm123abc',
+  })
+  @ApiOkResponse({
+    description: 'Previsão de chegada atualizada com sucesso',
+  })
+  @ApiBadRequestResponse({
+    description: 'Dados inválidos fornecidos',
+  })
+  async updatePrevisaoChegada(
+    @Param('id') id: string,
+    @Body() body: UpdatePrevisaoChegadaDto,
+  ) {
+    return this.service.atualizarPrevisaoChegada(id, body.previsao_chegada);
+  }
+
+  // POST /pedido/insert_celta/:id -> encaminha o pedido para o Celta (API de compras)
+  @Post('insert_celta/:id')
+  @ApiOperation({
+    summary: 'Insere o pedido no Celta',
+    description:
+      'Recebe apenas o pedido_id na URL. O corpo enviado para a rota /cotacoes ' +
+      '(API definida em API_COMPRAS_SERVICE) é montado a partir do próprio pedido. ' +
+      'Esta rota não recebe body.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID do pedido (pedido_id)',
+    example: 'cm123abc',
+  })
+  @ApiCreatedResponse({ description: 'Pedido enviado para o Celta com sucesso' })
+  @ApiBadRequestResponse({ description: 'Dados inválidos ou erro retornado pela API de compras' })
+  async insertCelta(@Param('id') id: string) {
+    return this.service.inserirCelta(id);
   }
 }

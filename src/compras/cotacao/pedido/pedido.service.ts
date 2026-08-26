@@ -1,5 +1,5 @@
 // src/pedido/pedido.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { PassThrough } from 'stream';
 import { Prisma, sis_feriados } from '@prisma/client';
@@ -893,6 +893,159 @@ export class PedidoService {
     if (!pedido) throw new NotFoundException(`Pedido ${id} não encontrado`);
     return pedido;
   }
+
+  async atualizarPrevisaoChegada(id: string, previsao_chegada: string | Date | null) {
+    let data: Date | null = null;
+
+    if (previsao_chegada !== null && previsao_chegada !== undefined && previsao_chegada !== '') {
+      const parsed = new Date(previsao_chegada);
+      if (isNaN(parsed.getTime())) {
+        throw new BadRequestException(
+          `previsao_chegada inválida: ${String(previsao_chegada)}`,
+        );
+      }
+      data = parsed;
+    }
+
+    try {
+      const pedido = await this.repo.updatePrevisaoChegada(id, data);
+      return {
+        ok: true,
+        message: 'Previsão de chegada atualizada com sucesso',
+        pedido,
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException(`Pedido ${id} não encontrado`);
+      }
+      throw e;
+    }
+  }
+
+  /* ----------------------- Inserção no Celta ----------------------- */
+  /**
+   * Monta o payload do pedido a partir do próprio banco (findByIdGerencial) e
+   * encaminha para o serviço externo de compras (rota /cotacoes), cujo endereço
+   * base vem do env API_COMPRAS_SERVICE e cuja API Key vem do env
+   * API_COMPRAS_SERVICE_TOKEN (enviada no header x-api-key). A rota não recebe body.
+   */
+  async inserirCelta(pedidoId: string) {
+    const id = String(pedidoId ?? '').trim();
+    if (!id) throw new BadRequestException('pedido_id é obrigatório');
+
+    const pedido = await this.repo.findByIdGerencial(id);
+    if (!pedido) throw new NotFoundException(`Pedido ${id} não encontrado`);
+
+    const for_codigo = Number(pedido.for_codigo);
+    if (!Number.isFinite(for_codigo)) {
+      throw new BadRequestException(`Pedido ${id} está sem for_codigo`);
+    }
+
+    const previsao_chegada = pedido.previsao_chegada
+      ? new Date(pedido.previsao_chegada).toISOString()
+      : null;
+
+    // A intranet trabalha sempre na empresa 3 (mesmo default usado no restante do módulo).
+    const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
+
+    const itens = (pedido.itens ?? []).map((item) => {
+      const quantidade = Number(item.quantidade ?? 0);
+      const unitario = Number(item.valor_unitario ?? 0);
+      return {
+        empresa,
+        pro_codigo: Number(item.pro_codigo),
+        quantidade,
+        unitario,
+        unidade: item.unidade ?? 'UN',
+        total: Number((quantidade * unitario).toFixed(2)),
+      };
+    });
+
+    if (itens.length === 0) {
+      throw new BadRequestException(`Pedido ${id} não possui itens para enviar`);
+    }
+
+    const base = String(process.env.API_COMPRAS_SERVICE ?? '')
+      .trim()
+      .replace(/\/+$/, '');
+    if (!base) {
+      throw new BadRequestException('API_COMPRAS_SERVICE não configurado no ambiente');
+    }
+
+    const apiKey = String(process.env.API_COMPRAS_SERVICE_TOKEN ?? '').trim();
+    if (!apiKey) {
+      throw new BadRequestException(
+        'API_COMPRAS_SERVICE_TOKEN não configurado no ambiente',
+      );
+    }
+
+    const url = `${base}/cotacoes`;
+    const payload = { for_codigo, previsao_chegada, itens };
+
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (e: any) {
+      throw new BadRequestException(
+        `Falha ao chamar ${url}: ${e?.message ?? String(e)}`,
+      );
+    }
+
+    const texto = await resp.text();
+    let data: any = texto;
+    try {
+      data = texto ? JSON.parse(texto) : null;
+    } catch {
+      /* resposta não-JSON: mantém o texto cru */
+    }
+
+    if (!resp.ok) {
+      throw new BadRequestException({
+        message: `Erro ao inserir pedido no Celta (${resp.status})`,
+        pedido_id: id,
+        status: resp.status,
+        data,
+      });
+    }
+
+    // O retorno da API traz o número do pedido no Celta em "pedido_cotacao".
+    const pedido_celta = Number(data?.pedido_cotacao);
+    if (!Number.isFinite(pedido_celta)) {
+      throw new BadRequestException({
+        message:
+          'A API de compras não devolveu "pedido_cotacao"; a amarração intranet x Celta não foi gravada.',
+        pedido_id: id,
+        status: resp.status,
+        data,
+      });
+    }
+
+    // O pedido_intranet é o próprio id do pedido (com_pedido.id).
+    const pedido_intranet = id;
+    const vinculo = await this.repo.upsertPedidoIntranetCelta(
+      pedido_intranet,
+      pedido_celta,
+    );
+
+    return {
+      ok: true,
+      message: 'Pedido enviado para o Celta com sucesso',
+      pedido_id: id,
+      pedido_intranet,
+      pedido_celta,
+      status: resp.status,
+      vinculo,
+      data,
+    };
+  }
 }
-
-

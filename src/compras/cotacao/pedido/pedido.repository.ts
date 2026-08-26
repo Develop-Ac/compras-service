@@ -146,9 +146,15 @@ export class PedidoRepository {
       select: { dias_compra: true },
     });
 
+    const vinculoCelta = await this.prisma.com_pedido_intranet_celta.findUnique({
+      where: { pedido_intranet: id },
+      select: { pedido_celta: true },
+    });
+
     return {
       ...pedido,
       dias_compra: dias_compra?.dias_compra ?? null,
+      pedido_celta: vinculoCelta?.pedido_celta ?? null,
       itens: pedido.itens.map((item) => ({
         ...item,
         ...(faixaPorItemId.get(item.id) ?? {
@@ -343,6 +349,14 @@ export class PedidoRepository {
     });
   }
 
+  /** Atualiza a previsão de chegada de um pedido */
+  async updatePrevisaoChegada(id: string, previsao_chegada: Date | null) {
+    return this.prisma.com_pedido.update({
+      where: { id },
+      data: { previsao_chegada },
+    });
+  }
+
   async findFornecedorById(id: number) {
     const fornecedor = await this.prisma.com_fornecedores.findFirst({
       where: { for_codigo: id },
@@ -357,5 +371,24 @@ export class PedidoRepository {
       select: { for_codigo: true },
     });
     return result.for_codigo;
+  }
+
+  /**
+   * Grava a amarração entre o id do pedido da intranet (com_pedido.id)
+   * e o número devolvido pelo Celta. Idempotente por pedido_intranet.
+   */
+  async upsertPedidoIntranetCelta(pedido_intranet: string, pedido_celta: number) {
+    return this.prisma.com_pedido_intranet_celta.upsert({
+      where: { pedido_intranet },
+      create: { pedido_intranet, pedido_celta },
+      update: { pedido_celta },
+    });
+  }
+
+  /** Busca a amarração intranet <-> celta pelo id do pedido da intranet */
+  async findVinculoCeltaByPedidoIntranet(pedido_intranet: string) {
+    return this.prisma.com_pedido_intranet_celta.findUnique({
+      where: { pedido_intranet },
+    });
   }
 }
