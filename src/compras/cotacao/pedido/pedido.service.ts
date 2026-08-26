@@ -1033,7 +1033,7 @@ export class PedidoService {
       );
     }
 
-    const url = `${base}/cotacoes`;
+    const url = `${base}/pedidos`;
     const payload = { for_codigo, previsao_chegada, itens };
 
     let resp: Response;
