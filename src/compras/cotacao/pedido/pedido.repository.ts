@@ -116,8 +116,9 @@ export class PedidoRepository {
   async findByIdGerencial(id: string) {
     const pedido = await this.prisma.com_pedido.findUnique({
       where: { id, itens: { some: { quantidade: { not: 0 } } } },
-      include: { 
+      include: {
         itens: {
+          where: { quantidade: { not: 0 } },
           orderBy: { created_at: 'asc' }
         }
       },
@@ -129,6 +130,7 @@ export class PedidoRepository {
       SELECT id, qtd_sugerida_min, qtd_sugerida_max
       FROM com_pedido_itens
       WHERE pedido_id = ${id}
+        AND quantidade <> 0
     `);
 
     const faixaPorItemId = new Map(
