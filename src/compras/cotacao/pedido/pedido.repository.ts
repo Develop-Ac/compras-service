@@ -18,6 +18,8 @@ export class PedidoRepository {
   /** Retorna pedidos com contagem e itens (para listagem leve) */
   async findAllWithLightItens() {
     return this.prisma.com_pedido.findMany({
+      // Não traz pedidos cujos itens estejam todos com quantidade = 0 (nem pedidos sem itens).
+      where: { itens: { some: { quantidade: { not: 0 } } } },
       orderBy: { created_at: 'desc' },
       include: {
         _count: { select: { itens: true } },
@@ -113,7 +115,7 @@ export class PedidoRepository {
   /** Busca um pedido por id com todos os dados (para gerencial) */
   async findByIdGerencial(id: string) {
     const pedido = await this.prisma.com_pedido.findUnique({
-      where: { id },
+      where: { id, itens: { some: { quantidade: { not: 0 } } } },
       include: { 
         itens: {
           orderBy: { created_at: 'asc' }
