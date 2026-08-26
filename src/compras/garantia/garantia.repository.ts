@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OpenQueryService as MssqlOpenQuery } from '../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../shared/erp-api/erp-api.service';
 
 const EMPRESA = 3;
 
@@ -42,7 +43,10 @@ export interface ProdutoNfs {
  */
 @Injectable()
 export class GarantiaRepository {
-  constructor(private readonly mssql: MssqlOpenQuery) {}
+  constructor(
+    private readonly mssql: MssqlOpenQuery,
+    private readonly erp: ErpApiService,
+  ) {}
 
   /** CNPJs (só dígitos) dos fornecedores informados — Stage_Fornecedores. */
   async cnpjsDeFornecedores(forCodigos: number[]): Promise<Array<{ for_codigo: number; cnpj: string; cnpjDig: string }>> {
@@ -71,14 +75,28 @@ export class GarantiaRepository {
   async clientesPorCnpj(cnpjDigs: string[]): Promise<Array<ClienteGarantia & { cnpjDig: string }>> {
     const lista = [...new Set(cnpjDigs.filter((d) => /^\d{11,}$/.test(d)))];
     if (!lista.length) return [];
-    const inList = lista.map((d) => `'${d}'`).join(',');
-    const fb =
-      `SELECT c.cli_codigo, c.cli_nome, c.cpf_cnpj ` +
-      `FROM clientes c ` +
-      `WHERE c.empresa = ${EMPRESA} ` +
-      `AND REPLACE(REPLACE(REPLACE(c.cpf_cnpj,'.',''),'/',''),'-','') IN (${inList})`;
-    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
-    const rows = await this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+
+    const rows = await this.erp.comFallback<any[]>(
+      async () => {
+        // A rota nomeada compara os dígitos e resolve UM documento por chamada;
+        // o grupo de um fornecedor tem poucos CNPJs, então o leque é pequeno.
+        const encontrados = await Promise.all(
+          lista.map((doc) => this.erp.clientePorDocumento(doc, EMPRESA)),
+        );
+        return encontrados.filter(Boolean);
+      },
+      async () => {
+        const inList = lista.map((d) => `'${d}'`).join(',');
+        const fb =
+          `SELECT c.cli_codigo, c.cli_nome, c.cpf_cnpj ` +
+          `FROM clientes c ` +
+          `WHERE c.empresa = ${EMPRESA} ` +
+          `AND REPLACE(REPLACE(REPLACE(c.cpf_cnpj,'.',''),'/',''),'-','') IN (${inList})`;
+        const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
+        return this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+      },
+    );
+
     return rows.map((r) => ({
       cli_codigo: Number(r.CLI_CODIGO),
       cli_nome: r.CLI_NOME ?? null,
@@ -125,11 +143,18 @@ export class GarantiaRepository {
   async produtosPorNfs(nfsList: number[]): Promise<ProdutoNfs[]> {
     const lista = [...new Set(nfsList.filter((n) => Number.isFinite(n)))];
     if (!lista.length) return [];
-    const fb = `SELECT ni.nfs, ni.pro_codigo, ni.quantidade, ni.unitario
+
+    const rows = await this.erp.comFallback<any[]>(
+      () => this.erp.nfsItensPorNotas(lista, EMPRESA),
+      async () => {
+        const fb = `SELECT ni.nfs, ni.pro_codigo, ni.quantidade, ni.unitario
                 FROM nfs_itens ni
                 WHERE ni.empresa = ${EMPRESA} AND ni.nfs IN (${lista.join(',')})`;
-    const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
-    const rows = await this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+        const tsql = `SELECT * FROM OPENQUERY([CONSULTA], '${fb.replace(/'/g, "''")}')`;
+        return this.mssql.query<any>(tsql, {}, { allowZeroRows: true, timeout: 60_000 });
+      },
+    );
+
     return rows.map((r) => ({
       nfs: Number(r.NFS),
       pro_codigo: Number(r.PRO_CODIGO),

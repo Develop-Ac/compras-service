@@ -365,6 +365,24 @@ export class PedidoRepository {
     return fornecedor?.for_nome ?? null;
   }
 
+  /** Nomes de fornecedores do cache local, em lote */
+  async findFornecedoresByIds(ids: number[]) {
+    if (!ids.length) return [];
+    return this.prisma.com_fornecedores.findMany({
+      where: { for_codigo: { in: ids } },
+      select: { for_codigo: true, for_nome: true },
+    });
+  }
+
+  /** Grava fornecedores no cache local, em lote */
+  async insertFornecedores(rows: { for_codigo: number; for_nome: string }[]) {
+    if (!rows.length) return;
+    await this.prisma.com_fornecedores.createMany({
+      data: rows,
+      skipDuplicates: true,
+    });
+  }
+
   async insertNewFonecedor(nome: string, id: number) {
     const result = await this.prisma.com_fornecedores.create({
       data: { for_nome: nome, for_codigo: id },

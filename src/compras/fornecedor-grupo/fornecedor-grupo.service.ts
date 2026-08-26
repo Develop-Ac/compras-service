@@ -166,14 +166,40 @@ export class FornecedorGrupoService {
 
   /** CNPJs (só dígitos) de todos os fornecedores do grupo do for_codigo (inclui ele mesmo). */
   async cnpjsDoGrupo(forCodigo: number): Promise<string[]> {
-    const grupo = await this.repo.expandGrupo(forCodigo);
-    const dados = await this.repo.fornecedoresPorCodigo(grupo);
-    const set = new Set<string>();
+    const mapa = await this.cnpjsDoGrupoEmLote([forCodigo]);
+    return mapa.get(forCodigo) ?? [];
+  }
+
+  /**
+   * EM LOTE: mapa for_codigo -> CNPJs (só dígitos) do grupo de cada um (inclui
+   * ele mesmo). Uma única leitura do cadastro para todos os fornecedores — o
+   * cadastro item a item ocupa uma conexão do pool da API por chamada.
+   */
+  async cnpjsDoGrupoEmLote(forCodigos: number[]): Promise<Map<number, string[]>> {
+    const unicos = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))];
+    const out = new Map<number, string[]>();
+    if (!unicos.length) return out;
+
+    const grupos = await this.repo.gruposDe(unicos); // for_codigo -> membros
+    const todos = [...new Set([...unicos, ...[...grupos.values()].flat()])];
+    const dados = await this.repo.fornecedoresPorCodigo(todos);
+
+    const cnpjPorForn = new Map<number, string>();
     for (const d of dados) {
       const dig = String(d.cpf_cnpj ?? '').replace(/\D/g, '');
-      if (dig) set.add(dig);
+      if (dig) cnpjPorForn.set(d.for_codigo, dig);
     }
-    return [...set];
+
+    for (const f of unicos) {
+      const membros = grupos.get(f) ?? [f];
+      const set = new Set<string>();
+      for (const m of membros) {
+        const dig = cnpjPorForn.get(m);
+        if (dig) set.add(dig);
+      }
+      out.set(f, [...set]);
+    }
+    return out;
   }
 
   /**

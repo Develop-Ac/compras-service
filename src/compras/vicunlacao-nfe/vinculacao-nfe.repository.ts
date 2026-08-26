@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { OpenQueryService as MssqlOpenQuery } from '../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../shared/erp-api/erp-api.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const LINKED_SERVER = 'CONSULTA';
@@ -39,6 +40,7 @@ export class VinculacaoNfeRepository {
 
   constructor(
     private readonly mssql: MssqlOpenQuery,
+    private readonly erp: ErpApiService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -51,6 +53,41 @@ export class VinculacaoNfeRepository {
    * Busca o XML completo de uma NF-e pela chave de acesso.
    */
   async findXmlByChave(chaveNfe: string, empresa = 1): Promise<NfeXmlRow | null> {
+    // Caminho principal: erp-firebird-api. A rota por-chaves devolve o BLOB
+    // inteiro — o OPENQUERY corta XML_COMPLETO em ~11 KB.
+    if (this.erp.habilitado) {
+      try {
+        return await this.findXmlByChaveViaApi(chaveNfe, empresa);
+      } catch (err: any) {
+        this.logger.warn(`[ERP-API nfe] ${err?.message || err} — tentando pelo OPENQUERY.`);
+      }
+    }
+    return this.findXmlByChaveViaOpenquery(chaveNfe, empresa);
+  }
+
+  private async findXmlByChaveViaApi(chaveNfe: string, empresa: number): Promise<NfeXmlRow | null> {
+    const chave = String(chaveNfe ?? '').trim();
+    const [xmls, dist] = await Promise.all([
+      this.erp.xmlPorChaves([chave], empresa),
+      this.erp.nfeDistribuicaoPorChave(chave, empresa).catch(() => [] as any[]),
+    ]);
+
+    // NF já lançada sai da NFE_DISTRIBUICAO mas mantém o XML — emitente/data
+    // podem vir nulos, e o service completa via com_nfe_conciliacao.
+    const d = dist.find((r: any) => Number(r.SITUACAO_NFE) === 1) ?? null;
+    const xml = xmls[0]?.XML_COMPLETO ?? null;
+    if (!xml && !d) return null;
+
+    return {
+      EMPRESA: empresa,
+      CHAVE_NFE: chave,
+      NOME_EMITENTE: d?.NOME_EMITENTE ?? null,
+      DATA_EMISSAO: d?.DATA_EMISSAO ?? null,
+      XML_COMPLETO: xml,
+    };
+  }
+
+  private async findXmlByChaveViaOpenquery(chaveNfe: string, empresa: number): Promise<NfeXmlRow | null> {
     const fbSql = `
       SELECT
         NFD.EMPRESA,
@@ -241,17 +278,6 @@ export class VinculacaoNfeRepository {
     }
     if (!fors.length || !variantes.size) return out;
 
-    const forList = fors.join(',');
-    const codList = [...variantes].map((c) => `'${this.fbLiteral(c)}'`).join(',');
-    const fbSql = `
-      SELECT FOR_CODIGO, COD_PROD_FORNECEDOR, PRO_CODIGO
-      FROM PRODUTOS_FORNECEDOR_NFE
-      WHERE EMPRESA = ${empresa}
-        AND FOR_CODIGO IN (${forList})
-        AND TRIM(COALESCE(COD_PROD_FORNECEDOR, '')) IN (${codList})
-    `;
-    const tsql = `SELECT * FROM OPENQUERY([${LINKED_SERVER}], '${this.fbLiteral(fbSql)}')`;
-
     type Row = {
       FOR_CODIGO: number | null;
       COD_PROD_FORNECEDOR: string | null;
@@ -259,10 +285,27 @@ export class VinculacaoNfeRepository {
     };
     let rows: Row[] = [];
     try {
-      rows = await this.mssql.query<Row>(tsql, {}, { timeout: 120_000, allowZeroRows: true });
+      rows = await this.erp.comFallback<Row[]>(
+        async () =>
+          // Grupo inteiro + variantes de cProd numa consulta só (dois `em`).
+          (await this.erp.referenciasFornecedorNfe(fors, [...variantes], empresa)) as Row[],
+        async () => {
+          const forList = fors.join(',');
+          const codList = [...variantes].map((c) => `'${this.fbLiteral(c)}'`).join(',');
+          const fbSql = `
+            SELECT FOR_CODIGO, COD_PROD_FORNECEDOR, PRO_CODIGO
+            FROM PRODUTOS_FORNECEDOR_NFE
+            WHERE EMPRESA = ${empresa}
+              AND FOR_CODIGO IN (${forList})
+              AND TRIM(COALESCE(COD_PROD_FORNECEDOR, '')) IN (${codList})
+          `;
+          const tsql = `SELECT * FROM OPENQUERY([${LINKED_SERVER}], '${this.fbLiteral(fbSql)}')`;
+          return this.mssql.query<Row>(tsql, {}, { timeout: 120_000, allowZeroRows: true });
+        },
+      );
     } catch (err: any) {
       // Método 1 indisponível -> o motor cai nos próximos (referência/grupo/semântica).
-      this.logger.error(`[OPENQUERY produto-fornecedor-nfe] ${err?.message || err}`);
+      this.logger.error(`[produto-fornecedor-nfe] ${err?.message || err}`);
       return out;
     }
 
