@@ -395,24 +395,6 @@ export class ErpApiService {
   }
 
   /**
-<<<<<<< HEAD
-<<<<<<< HEAD
-   * De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE) de UM
-   * fornecedor, filtrado pelos códigos (cProd) no servidor — a rota nomeada
-   * resolve o espaço à direita que o ERP grava em COD_PROD_FORNECEDOR. Puxar o
-   * catálogo inteiro do fornecedor para filtrar aqui estoura o teto de linhas
-   * da tabela em fornecedor grande, e o corte silencioso perde vínculo.
-   */
-  async referenciasFornecedorNfe(
-    fornecedor: number,
-    codigos: string[],
-    empresa: number,
-  ): Promise<any[]> {
-    const lista = [...new Set(codigos.map((c) => String(c ?? '').trim()).filter(Boolean))];
-    if (!lista.length || !Number.isFinite(fornecedor)) return [];
-=======
-=======
->>>>>>> ad08158889d70fc8b61ca8d60b96e9f38b5d87c4
    * De-para produto-fornecedor da NF-e (PRODUTOS_FORNECEDOR_NFE): todos os
    * fornecedores do grupo E os códigos (cProd) na MESMA consulta — dois `em`
    * combinados com AND. Uma chamada por NF, retorno do tamanho da NF.
@@ -431,10 +413,6 @@ export class ErpApiService {
     const fors = [...new Set(forCodigos.filter((n) => Number.isFinite(n)))].slice(0, MAX_EM);
     const lista = [...new Set(codigos.map((c) => String(c ?? '').trim()).filter(Boolean))];
     if (!fors.length || !lista.length) return [];
-<<<<<<< HEAD
->>>>>>> fastify
-=======
->>>>>>> ad08158889d70fc8b61ca8d60b96e9f38b5d87c4
 
     const lotes: string[][] = [];
     for (let i = 0; i < lista.length; i += MAX_EM) lotes.push(lista.slice(i, i + MAX_EM));
@@ -442,13 +420,6 @@ export class ErpApiService {
     const partes = await Promise.all(
       lotes.map((lote) =>
         this.pedirPost(
-<<<<<<< HEAD
-<<<<<<< HEAD
-          '/erp/produtos-fornecedor/referencias',
-          { fornecedor, codigos: lote, empresa },
-=======
-=======
->>>>>>> ad08158889d70fc8b61ca8d60b96e9f38b5d87c4
           '/erp/produtos-fornecedor/consulta',
           {
             empresa,
@@ -459,10 +430,6 @@ export class ErpApiService {
             ],
             limite: 5000,
           },
-<<<<<<< HEAD
->>>>>>> fastify
-=======
->>>>>>> ad08158889d70fc8b61ca8d60b96e9f38b5d87c4
           { checarTruncado: false },
         ),
       ),
