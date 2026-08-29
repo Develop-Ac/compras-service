@@ -174,12 +174,24 @@ model com_pedido {
   garantia_qtd_produtos  Int?
   garantia_valor         Decimal?                 @db.Decimal(15, 2)
   garantia_verificada_em DateTime?                @db.Timestamp(6)
+  previsao_chegada       DateTime?                @db.Timestamptz(6)
   itens                  com_pedido_itens[]
   nfe_vinculos           com_pedido_nfe_vinculo[]
 
   @@unique([pedido_cotacao, for_codigo])
   @@index([pedido_cotacao])
   @@index([for_codigo])
+}
+
+/// Amarração entre o número do pedido gerado na intranet e o número devolvido pelo Celta.
+model com_pedido_intranet_celta {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pedido_celta    Int      @unique(map: "uq_com_pedido_celta")
+  pedido_intranet String   @unique(map: "uq_com_pedido_intranet")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([pedido_intranet], map: "idx_com_pedido_intranet_celta_intranet")
 }
 
 model com_pedido_itens {
@@ -1884,24 +1896,29 @@ model rec_ml_integracao {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model rec_ocorrencia {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  numero         Int       @unique(map: "uq_rec_oco_numero") @default(autoincrement())
-  chave_cte      String    @db.VarChar(44)
-  cte_numero     String?
-  transportadora String?
-  fornecedor     String?
-  nfs            String[]  @default([])
-  motivos        String[]
-  descricao      String
-  produto        String?
-  codigo_produto String?
-  quantidade     String?
-  providencia    String?
-  conferente     String?
-  registrado_por String    @db.VarChar(64)
-  registrado_em  DateTime  @default(dbgenerated("(now() AT TIME ZONE 'America/Cuiaba'::text)")) @db.Timestamp(6)
-  encerrada_em   DateTime? @db.Timestamp(6)
-  encerrada_por  String?   @db.VarChar(64)
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  numero              Int                   @unique(map: "uq_rec_oco_numero") @default(autoincrement())
+  chave_cte           String                @db.VarChar(44)
+  cte_numero          String?
+  transportadora      String?
+  fornecedor          String?
+  nfs                 String[]              @default([])
+  motivos             String[]              @default([])
+  descricao           String                @default("")
+  produto             String?
+  codigo_produto      String?
+  quantidade          String?
+  providencia         String?
+  conferente          String?
+  registrado_por      String                @db.VarChar(64)
+  registrado_em       DateTime              @default(dbgenerated("(now() AT TIME ZONE 'America/Cuiaba'::text)")) @db.Timestamp(6)
+  encerrada_em        DateTime?             @db.Timestamp(6)
+  encerrada_por       String?               @db.VarChar(64)
+  encerramento_texto  String?
+  aberta_em           DateTime?             @db.Timestamp(6)
+  aberta_por          String?               @db.VarChar(64)
+  token               String                @unique(map: "uq_rec_oco_token") @default(dbgenerated("upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 12))")) @db.Char(12)
+  rec_ocorrencia_foto rec_ocorrencia_foto[]
 
   @@index([registrado_em(sort: Desc)], map: "idx_rec_oco_recentes")
 }
@@ -1953,6 +1970,52 @@ model sac_kanban_minion {
   descricao     String     @db.VarChar(255)
   sac_kanban_id String     @db.VarChar(255)
   sac_kanban    sac_kanban @relation(fields: [sac_kanban_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_sac_kanban_minion_sac_kanban")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model rec_impressora {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome           String    @unique(map: "rec_impressora_nome_unico")
+  local          String?
+  host           String
+  porta          Int       @default(9100)
+  dpi            Int       @default(203)
+  midia_atual    String    @default("10x15")
+  ativa          Boolean   @default(true)
+  padrao         Boolean   @default(false)
+  observacao     String?
+  criada_em      DateTime  @default(dbgenerated("(now() AT TIME ZONE 'America/Cuiaba'::text)")) @db.Timestamp(6)
+  criada_por     String
+  atualizada_em  DateTime? @db.Timestamp(6)
+  atualizada_por String?
+  ajuste_x_mm    Decimal   @default(0) @db.Decimal(4, 1)
+  ajuste_y_mm    Decimal   @default(0) @db.Decimal(4, 1)
+
+  @@unique([host, porta], map: "rec_impressora_destino_unico")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model rec_ocorrencia_foto {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ocorrencia_id  String?         @db.Uuid
+  waha_msg_id    String          @unique(map: "uq_rec_foto_msg")
+  chat_id        String
+  autor          String?
+  legenda        String?
+  bucket         String
+  object_key     String
+  mimetype       String
+  tamanho_bytes  BigInt
+  filehash       String?
+  enviada_em     DateTime        @db.Timestamp(6)
+  capturada_em   DateTime        @default(dbgenerated("(now() AT TIME ZONE 'America/Cuiaba'::text)")) @db.Timestamp(6)
+  vinculada_em   DateTime?       @db.Timestamp(6)
+  vinculada_por  String?         @db.VarChar(64)
+  origem_vinculo String?         @db.VarChar(12)
+  rec_ocorrencia rec_ocorrencia? @relation(fields: [ocorrencia_id], references: [id], onUpdate: NoAction)
+
+  @@unique([bucket, object_key], map: "uq_rec_foto_objeto")
 }
 
 enum rec_estado_resolucao {

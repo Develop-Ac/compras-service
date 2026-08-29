@@ -1,7 +1,7 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { NotaFiscalService } from './notaFiscal.service';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { FastifyReply } from 'fastify';
 
 @ApiTags('Compras - Nota Fiscal')
 @Controller('nota-fiscal')
@@ -30,10 +30,10 @@ export class NotaFiscalController {
     @ApiOperation({ summary: 'Gera o DANFE em PDF para a chave NFe informada' })
     @ApiResponse({ status: 200, description: 'PDF gerado com sucesso', content: { 'application/pdf': {} } })
     @ApiQuery({ name: 'chaveNfe', type: String, required: true, description: 'Chave da NFe' })
-    async generateDanfe(@Query('chaveNfe') chaveNfe: string, @Res() res: Response) {
+    async generateDanfe(@Query('chaveNfe') chaveNfe: string, @Res() res: FastifyReply) {
     const pdfBuffer = await this.notaFiscalService.generateDanfe(chaveNfe);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename=danfe.pdf');
+    res.header('Content-Type', 'application/pdf');
+    res.header('Content-Disposition', 'inline; filename=danfe.pdf');
     res.send(pdfBuffer);
     }
 }

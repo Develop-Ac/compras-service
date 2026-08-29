@@ -8,6 +8,7 @@ import * as sql from 'mssql';
 
 // ✅ novo: serviço compartilhado que gerencia o pool/conexão MSSQL (OpenQuery)
 import { OpenQueryService } from '../../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../../shared/erp-api/erp-api.service';
 import { CotacaoSyncRepository } from './cotacao-sync.repository';
 
 type NextFornecedor = {
@@ -42,6 +43,7 @@ export class CotacaoSyncService {
     private readonly http: HttpService,
     private readonly config: ConfigService,
     private readonly openQuery: OpenQueryService,
+    private readonly erpApi: ErpApiService,
   ) {}
 
   private parseIntStrict(label: string, v: unknown): number {
@@ -98,11 +100,14 @@ export class CotacaoSyncService {
   }
 
   /**
-   * UM SELECT SÓ: busca CUSTO_FABRICA, CUSTO_MEDIO, ESTOQUE_DISPONIVEL
-   * em [dbo].[Stage_Produtos] para TODA a lista de códigos (deduplicada) via IN (...).
+   * UMA CONSULTA SÓ: busca CUSTO_FABRICA, CUSTO_MEDIO, ESTOQUE_DISPONIVEL
+   * para TODA a lista de códigos (deduplicada).
    * Retorna Map<pro_codigo, { custo_fabrica, custo_medio, estoque_disponivel }>.
    *
-   * ⚠️ Requer que o OpenQueryService entregue um pool MSSQL conectado.
+   * Caminho principal: erp-firebird-api — leitura do cadastro vivo, sem passar
+   * pelo SQL Server. Abrir o pedido depende desta consulta; quando o linked
+   * server CONSULTA satura e esgota o pool MSSQL, é a API que mantém a tela
+   * de pé. Plano B: Stage_Produtos (cópia do ETL no BI).
    */
   async fetchProdutosInfoOneShot(
     codigos: number[],
@@ -110,8 +115,6 @@ export class CotacaoSyncService {
   ): Promise<
     Map<number, { custo_fabrica: number | null; custo_medio: number | null; estoque_disponivel: number | null }>
   > {
-    const map = new Map<number, { custo_fabrica: number | null; custo_medio: number | null; estoque_disponivel: number | null }>();
-
     // Sanitiza e deduplica
     const unique = Array.from(
       new Set(
@@ -120,7 +123,46 @@ export class CotacaoSyncService {
           .filter((n) => Number.isFinite(n)) as number[],
       ),
     );
-    if (unique.length === 0) return map;
+    if (unique.length === 0) {
+      return new Map();
+    }
+
+    return this.erpApi.comFallback(
+      async () => {
+        const rows = await this.erpApi.produtosPorCodigos(unique, empresa, [
+          'PRO_CODIGO',
+          'CUSTO_FABRICA',
+          'CUSTO_MEDIO',
+          'ESTOQUE_DISPONIVEL',
+        ]);
+        const map = new Map<
+          number,
+          { custo_fabrica: number | null; custo_medio: number | null; estoque_disponivel: number | null }
+        >();
+        for (const row of rows) {
+          const cod = Math.trunc(Number(row.PRO_CODIGO));
+          if (!Number.isFinite(cod)) continue;
+          map.set(cod, {
+            custo_fabrica: row.CUSTO_FABRICA != null ? Number(row.CUSTO_FABRICA) : null,
+            custo_medio: row.CUSTO_MEDIO != null ? Number(row.CUSTO_MEDIO) : null,
+            estoque_disponivel:
+              row.ESTOQUE_DISPONIVEL != null ? Number(row.ESTOQUE_DISPONIVEL) : null,
+          });
+        }
+        return map;
+      },
+      () => this.fetchProdutosInfoViaStage(unique, empresa),
+    );
+  }
+
+  /** Plano B: leitura da cópia do ETL em [dbo].[Stage_Produtos] via IN (...). */
+  private async fetchProdutosInfoViaStage(
+    unique: number[],
+    empresa: number,
+  ): Promise<
+    Map<number, { custo_fabrica: number | null; custo_medio: number | null; estoque_disponivel: number | null }>
+  > {
+    const map = new Map<number, { custo_fabrica: number | null; custo_medio: number | null; estoque_disponivel: number | null }>();
 
     // Monta lista literal segura (apenas números)
     const inList = unique.join(',');

@@ -286,6 +286,7 @@ export class VinculacaoNfeRepository {
     let rows: Row[] = [];
     try {
       rows = await this.erp.comFallback<Row[]>(
+<<<<<<< HEAD
         async () => {
           // A rota nomeada filtra o cProd no servidor (1 fornecedor por chamada);
           // o grupo tem poucos fornecedores, e o retorno fica no tamanho da NF.
@@ -295,6 +296,11 @@ export class VinculacaoNfeRepository {
           );
           return partes.flat() as Row[];
         },
+=======
+        async () =>
+          // Grupo inteiro + variantes de cProd numa consulta só (dois `em`).
+          (await this.erp.referenciasFornecedorNfe(fors, [...variantes], empresa)) as Row[],
+>>>>>>> fastify
         async () => {
           const forList = fors.join(',');
           const codList = [...variantes].map((c) => `'${this.fbLiteral(c)}'`).join(',');

@@ -1,6 +1,7 @@
 // src/pedido/pedido.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Response as ExpressResponse } from 'express';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
+import { PassThrough } from 'stream';
 import { Prisma, sis_feriados } from '@prisma/client';
 import { PedidoRepository } from './pedido.repository';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
@@ -364,7 +365,7 @@ export class PedidoService {
     return results;
   }
 
-  async gerarExcel(res: ExpressResponse, id: string) {
+  async gerarExcel(res: FastifyReply, id: string) {
     const pedido = await this.repo.findByIdWithItens(id);
 
     if (!pedido) throw new NotFoundException('Pedido não encontrado');
@@ -399,15 +400,20 @@ export class PedidoService {
       });
     }
 
-    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.set('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.header('Content-Disposition', `attachment; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}.xlsx"`);
 
-    await workbook.xlsx.write(res as unknown as import('stream').Writable);
-    res.end();
+    // No Fastify o streaming é feito enviando um Readable para o reply,
+    // preservando os headers já definidos (inclusive os do CORS).
+    const stream = new PassThrough();
+    res.send(stream);
+
+    await workbook.xlsx.write(stream);
+    stream.end();
   }
 
   /**
-   * Gera PDF do pedido por ID (Express).
+   * Gera PDF do pedido por ID (streaming direto no reply do Fastify).
    * - Título central alinhado verticalmente ao centro da logo
    * - Bloco COMPRADOR à esquerda
    * - Sem metadados à direita (removidos)
@@ -417,7 +423,7 @@ export class PedidoService {
    * - **Novo**: Bloco FORNECEDOR (via OPENQUERY) logo abaixo do endereço do comprador
    */
   async gerarPdfPedidoExpress(
-    res: ExpressResponse,
+    res: FastifyReply,
     id: string,
     opts?: PdfOpts, // <<<<<<<<<<<<< adicionamos opts.marca
   ) {
@@ -430,12 +436,13 @@ export class PedidoService {
 
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
 
-    res.set('Content-Type', 'application/pdf');
-    res.set(
+    res.header('Content-Type', 'application/pdf');
+    res.header(
       'Content-Disposition',
       `inline; filename="pedido_${this.fmtPedidoCotacao(pedido.pedido_cotacao)}_id_${pedido.id}.pdf"`,
     );
-    doc.pipe(res as unknown as NodeJS.WritableStream);
+    // O Fastify faz o pipe do Readable (PDFDocument) para o socket.
+    res.send(doc);
 
     // Geometria
     const startX = doc.page.margins.left;
@@ -937,6 +944,159 @@ export class PedidoService {
     if (!pedido) throw new NotFoundException(`Pedido ${id} não encontrado`);
     return pedido;
   }
+
+  async atualizarPrevisaoChegada(id: string, previsao_chegada: string | Date | null) {
+    let data: Date | null = null;
+
+    if (previsao_chegada !== null && previsao_chegada !== undefined && previsao_chegada !== '') {
+      const parsed = new Date(previsao_chegada);
+      if (isNaN(parsed.getTime())) {
+        throw new BadRequestException(
+          `previsao_chegada inválida: ${String(previsao_chegada)}`,
+        );
+      }
+      data = parsed;
+    }
+
+    try {
+      const pedido = await this.repo.updatePrevisaoChegada(id, data);
+      return {
+        ok: true,
+        message: 'Previsão de chegada atualizada com sucesso',
+        pedido,
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException(`Pedido ${id} não encontrado`);
+      }
+      throw e;
+    }
+  }
+
+  /* ----------------------- Inserção no Celta ----------------------- */
+  /**
+   * Monta o payload do pedido a partir do próprio banco (findByIdGerencial) e
+   * encaminha para o serviço externo de compras (rota /cotacoes), cujo endereço
+   * base vem do env API_COMPRAS_SERVICE e cuja API Key vem do env
+   * API_COMPRAS_SERVICE_TOKEN (enviada no header x-api-key). A rota não recebe body.
+   */
+  async inserirCelta(pedidoId: string) {
+    const id = String(pedidoId ?? '').trim();
+    if (!id) throw new BadRequestException('pedido_id é obrigatório');
+
+    const pedido = await this.repo.findByIdGerencial(id);
+    if (!pedido) throw new NotFoundException(`Pedido ${id} não encontrado`);
+
+    const for_codigo = Number(pedido.for_codigo);
+    if (!Number.isFinite(for_codigo)) {
+      throw new BadRequestException(`Pedido ${id} está sem for_codigo`);
+    }
+
+    const previsao_chegada = pedido.previsao_chegada
+      ? new Date(pedido.previsao_chegada).toISOString()
+      : null;
+
+    // A intranet trabalha sempre na empresa 3 (mesmo default usado no restante do módulo).
+    const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
+
+    const itens = (pedido.itens ?? []).map((item) => {
+      const quantidade = Number(item.quantidade ?? 0);
+      const unitario = Number(item.valor_unitario ?? 0);
+      return {
+        empresa,
+        pro_codigo: Number(item.pro_codigo),
+        quantidade,
+        unitario,
+        unidade: item.unidade ?? 'UN',
+        total: Number((quantidade * unitario).toFixed(2)),
+      };
+    });
+
+    if (itens.length === 0) {
+      throw new BadRequestException(`Pedido ${id} não possui itens para enviar`);
+    }
+
+    const base = String(process.env.API_COMPRAS_SERVICE ?? '')
+      .trim()
+      .replace(/\/+$/, '');
+    if (!base) {
+      throw new BadRequestException('API_COMPRAS_SERVICE não configurado no ambiente');
+    }
+
+    const apiKey = String(process.env.API_COMPRAS_SERVICE_TOKEN ?? '').trim();
+    if (!apiKey) {
+      throw new BadRequestException(
+        'API_COMPRAS_SERVICE_TOKEN não configurado no ambiente',
+      );
+    }
+
+    const url = `${base}/pedidos`;
+    const payload = { for_codigo, previsao_chegada, itens };
+
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (e: any) {
+      throw new BadRequestException(
+        `Falha ao chamar ${url}: ${e?.message ?? String(e)}`,
+      );
+    }
+
+    const texto = await resp.text();
+    let data: any = texto;
+    try {
+      data = texto ? JSON.parse(texto) : null;
+    } catch {
+      /* resposta não-JSON: mantém o texto cru */
+    }
+
+    if (!resp.ok) {
+      throw new BadRequestException({
+        message: `Erro ao inserir pedido no Celta (${resp.status})`,
+        pedido_id: id,
+        status: resp.status,
+        data,
+      });
+    }
+
+    // O retorno da API traz o número do pedido no Celta em "pedido_cotacao".
+    const pedido_celta = Number(data?.pedido_cotacao);
+    if (!Number.isFinite(pedido_celta)) {
+      throw new BadRequestException({
+        message:
+          'A API de compras não devolveu "pedido_cotacao"; a amarração intranet x Celta não foi gravada.',
+        pedido_id: id,
+        status: resp.status,
+        data,
+      });
+    }
+
+    // O pedido_intranet é o próprio id do pedido (com_pedido.id).
+    const pedido_intranet = id;
+    const vinculo = await this.repo.upsertPedidoIntranetCelta(
+      pedido_intranet,
+      pedido_celta,
+    );
+
+    return {
+      ok: true,
+      message: 'Pedido enviado para o Celta com sucesso',
+      pedido_id: id,
+      pedido_intranet,
+      pedido_celta,
+      status: resp.status,
+      vinculo,
+      data,
+    };
+  }
 }
-
-
