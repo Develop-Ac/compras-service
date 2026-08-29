@@ -437,7 +437,35 @@ export class ErpApiService {
     return partes.flat();
   }
 
+  /* -------------------------------- cotações -------------------------------- */
+
+  /**
+   * Itens de UMA cotação, com produto e marca (rota nomeada /cotacoes/itens).
+   * Substitui o OPENQUERY de PEDIDOS_COTACOES + ITENS + PRODUTOS + MARCAS —
+   * o mais recorrente do serviço (tela do pedido e motor de vinculação).
+   */
+  async cotacaoItens(pedido: number, empresa: number): Promise<any[]> {
+    return this.pedir(
+      '/erp/cotacoes/itens',
+      { pedido, empresa },
+      { checarTruncado: false },
+    );
+  }
+
   /* ----------------------------- entrada fiscal ----------------------------- */
+
+  /**
+   * Última compra de um produto por fornecedor (rota nomeada do compra-casada).
+   * A agregação (MAX por fornecedor + desempate por NFE/ITEM) roda do lado da
+   * API; aqui chega uma linha por fornecedor, no shape do OPENQUERY antigo.
+   */
+  async ultimaCompraProduto(proCodigo: number, empresa: number): Promise<any[]> {
+    return this.pedir(
+      '/erp/nf-entrada/ultima-compra-produto',
+      { produto: proCodigo, empresa },
+      { checarTruncado: false },
+    );
+  }
 
   /**
    * NF-e recebidas e ainda não importadas (rota nomeada /pendentes). O XML não

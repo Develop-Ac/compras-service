@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenQueryService as MssqlOpenQuery } from '../../../shared/database/openquery/openquery.service';
+import { ErpApiService } from '../../../shared/erp-api/erp-api.service';
 
 type PedidoCotacaoRow = {
   pedido_cotacao: number;
@@ -29,13 +30,17 @@ type FornecedorRow = {
 };
 
 /**
- * Repository que encapsula queries OPENQUERY ao Firebird via Linked Server.
+ * Repository das consultas de cotação/fornecedor no ERP: erp-firebird-api
+ * primeiro, OPENQUERY ao Firebird via Linked Server como plano B.
  */
 @Injectable()
 export class ConsultaOpenqueryRepository {
   private readonly logger = new Logger(ConsultaOpenqueryRepository.name);
 
-  constructor(private readonly mssql: MssqlOpenQuery) {}
+  constructor(
+    private readonly mssql: MssqlOpenQuery,
+    private readonly erp: ErpApiService,
+  ) {}
 
   /** Escapa aspas simples para o literal T-SQL do OPENQUERY */
   private fbLiteral(sql: string): string {
@@ -43,9 +48,50 @@ export class ConsultaOpenqueryRepository {
   }
 
   /**
-   * Busca itens de um pedido de cotação no Firebird.
+   * Busca itens de um pedido de cotação no ERP.
+   *
+   * As linhas saem com as chaves em minúsculas E em MAIÚSCULAS: o caminho
+   * OPENQUERY devolvia os nomes como o driver mandasse, e há tela lendo cada
+   * forma. O dobro de chaves é o preço de não quebrar nenhuma.
    */
   async findPedidoItens(empresa: number, pedido: number): Promise<PedidoCotacaoRow[]> {
+    return this.erp.comFallback<PedidoCotacaoRow[]>(
+      async () => {
+        const rows = await this.erp.cotacaoItens(pedido, empresa);
+        return rows.map((r) => {
+          const base = {
+            pedido_cotacao: r.PEDIDO_COTACAO ?? null,
+            emissao: r.EMISSAO ?? null,
+            pro_codigo: r.PRO_CODIGO ?? null,
+            pro_descricao: r.PRO_DESCRICAO ?? null,
+            mar_descricao: r.MAR_DESCRICAO ?? null,
+            referencia: r.REFERENCIA ?? null,
+            unidade: r.UNIDADE ?? null,
+            quantidade: r.QUANTIDADE ?? null,
+            dt_ultima_compra: r.DT_ULTIMA_COMPRA ?? null,
+          };
+          return {
+            ...base,
+            PEDIDO_COTACAO: base.pedido_cotacao,
+            EMISSAO: base.emissao,
+            PRO_CODIGO: base.pro_codigo,
+            PRO_DESCRICAO: base.pro_descricao,
+            MAR_DESCRICAO: base.mar_descricao,
+            REFERENCIA: base.referencia,
+            UNIDADE: base.unidade,
+            QUANTIDADE: base.quantidade,
+            DT_ULTIMA_COMPRA: base.dt_ultima_compra,
+          } as PedidoCotacaoRow;
+        });
+      },
+      () => this.findPedidoItensViaOpenquery(empresa, pedido),
+    );
+  }
+
+  private async findPedidoItensViaOpenquery(
+    empresa: number,
+    pedido: number,
+  ): Promise<PedidoCotacaoRow[]> {
     const fbSql = `
       SELECT
           orc.pedido_cotacao,
@@ -83,9 +129,38 @@ export class ConsultaOpenqueryRepository {
   }
 
   /**
-   * Busca dados do fornecedor por for_codigo.
+   * Busca dados do fornecedor por for_codigo — cadastro vivo pela API
+   * (fornecedorCompleto), OPENQUERY como plano B. Nos dois caminhos a saída é
+   * normalizada para o shape em minúsculas do tipo.
    */
   async findFornecedorByCodigo(empresa: number, forCodigo: number): Promise<FornecedorRow | null> {
+    return this.erp.comFallback<FornecedorRow | null>(
+      async () => {
+        const r = await this.erp.fornecedorCompleto(forCodigo, empresa);
+        if (!r) return null;
+        return {
+          for_codigo: r.FOR_CODIGO ?? forCodigo,
+          for_nome: r.FOR_NOME ?? null,
+          cpf_cnpj: r.CPF_CNPJ ?? null,
+          rg_ie: r.RG_IE ?? null,
+          endereco: r.ENDERECO ?? null,
+          bairro: r.BAIRRO ?? null,
+          numero: r.NUMERO ?? null,
+          cidade: r.CIDADE ?? null,
+          uf: r.UF ?? null,
+          email: r.EMAIL ?? null,
+          fone: r.FONE ?? null,
+          contato: r.CONTATO ?? null,
+        };
+      },
+      () => this.findFornecedorByCodigoViaOpenquery(empresa, forCodigo),
+    );
+  }
+
+  private async findFornecedorByCodigoViaOpenquery(
+    empresa: number,
+    forCodigo: number,
+  ): Promise<FornecedorRow | null> {
     const fbSql = `
       SELECT
         fo.for_codigo,

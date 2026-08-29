@@ -180,6 +180,36 @@ export class VinculacaoNfeRepository {
    * cotação só existem sob a empresa gerencial; por isso o default é 3.
    */
   async findCotacaoItens(pedido: number, empresa = 3): Promise<CotacaoItemRow[]> {
+    return this.erp.comFallback<CotacaoItemRow[]>(
+      async () => {
+        // Rota nomeada /cotacoes/itens: o mesmo SELECT com os três JOINs, direto
+        // no Firebird. Normaliza para as chaves em minúsculas do tipo — é o que
+        // unificarItensCotacao lê.
+        const rows = await this.erp.cotacaoItens(pedido, empresa);
+        return rows.map(
+          (r): CotacaoItemRow => ({
+            pedido_cotacao: r.PEDIDO_COTACAO ?? null,
+            emissao: r.EMISSAO ?? null,
+            pro_codigo: r.PRO_CODIGO ?? null,
+            pro_descricao: r.PRO_DESCRICAO ?? null,
+            mar_descricao: r.MAR_DESCRICAO ?? null,
+            referencia: r.REFERENCIA ?? null,
+            ref_fabricante: r.REF_FABRICANTE ?? null,
+            ref_fornecedor: r.REF_FORNECEDOR ?? null,
+            unidade: r.UNIDADE ?? null,
+            quantidade: r.QUANTIDADE ?? null,
+            dt_ultima_compra: r.DT_ULTIMA_COMPRA ?? null,
+          }),
+        );
+      },
+      () => this.findCotacaoItensViaOpenquery(pedido, empresa),
+    );
+  }
+
+  private async findCotacaoItensViaOpenquery(
+    pedido: number,
+    empresa: number,
+  ): Promise<CotacaoItemRow[]> {
     const fbSql = `
       SELECT
           orc.pedido_cotacao,

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MssqlService } from '../../common/mssql/mssql.service';
+import { ErpApiService } from '../../shared/erp-api/erp-api.service';
 
 /** Linha crua da Stage_FornecedorSubgrupos (colunas em MAIÚSCULO, como no BI). */
 export interface FornecedorSubgrupoRow {
@@ -38,7 +39,10 @@ const EMPRESA = 3;
 
 @Injectable()
 export class CompraCasadaFornecedoresRepository {
-  constructor(private readonly mssql: MssqlService) {}
+  constructor(
+    private readonly mssql: MssqlService,
+    private readonly erp: ErpApiService,
+  ) {}
 
   /** SUBGRP_CODIGO de um produto (Stage_Produtos, staging do ERP no BI). */
   async subgrupoDoProduto(proCodigo: number): Promise<number | null> {
@@ -134,6 +138,35 @@ export class CompraCasadaFornecedoresRepository {
     const pro = Math.trunc(Number(proCodigo));
     if (!Number.isFinite(pro)) return [];
 
+    return this.erp.comFallback<UltimaCompraProdutoRow[]>(
+      async () => {
+        // A rota nomeada faz a agregação (MAX por fornecedor + desempate por
+        // NFE/ITEM) do lado da API e já devolve no shape do OPENQUERY antigo.
+        const rows = await this.erp.ultimaCompraProduto(pro, EMPRESA);
+        return rows.map(
+          (r): UltimaCompraProdutoRow => ({
+            FOR_CODIGO: Number(r.FOR_CODIGO),
+            FOR_NOME: r.FOR_NOME ?? '',
+            FOR_UF: r.FOR_UF ?? null,
+            PRO_CODIGO: Number(r.PRO_CODIGO),
+            PRO_DESCRICAO: r.PRO_DESCRICAO ?? null,
+            ULTIMA_COMPRA: r.ULTIMA_COMPRA ? new Date(r.ULTIMA_COMPRA) : null,
+            NFE: r.NFE == null ? null : Number(r.NFE),
+            UNIDADE: r.UNIDADE ?? null,
+            QUANTIDADE: r.QUANTIDADE == null ? null : Number(r.QUANTIDADE),
+            UNITARIO: r.UNITARIO == null ? null : Number(r.UNITARIO),
+            CUSTO_NOTA: r.CUSTO_NOTA == null ? null : Number(r.CUSTO_NOTA),
+            FATOR_CONVERSAO: r.FATOR_CONVERSAO == null ? null : Number(r.FATOR_CONVERSAO),
+          }),
+        );
+      },
+      () => this.ultimaCompraProdutoViaOpenquery(pro),
+    );
+  }
+
+  private async ultimaCompraProdutoViaOpenquery(
+    pro: number,
+  ): Promise<UltimaCompraProdutoRow[]> {
     const query = `
         SELECT x.FOR_CODIGO, x.FOR_NOME, x.FOR_UF, x.PRO_CODIGO, x.PRO_DESCRICAO,
                x.ULTIMA_COMPRA, x.NFE, x.UNIDADE, x.QUANTIDADE, x.UNITARIO,
