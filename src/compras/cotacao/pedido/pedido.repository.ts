@@ -211,11 +211,16 @@ export class PedidoRepository {
     pedido_cotacao: number,
     for_codigo: number,
     prazo: string,
+    previsao_chegada?: Date | null,
   ) {
+    // Só grava previsao_chegada quando enviada; undefined mantém o valor atual.
+    const previsao =
+      previsao_chegada !== undefined ? { previsao_chegada } : {};
+
     return tx.com_pedido.upsert({
       where: { pedido_cotacao_for_codigo: { pedido_cotacao, for_codigo } },
-      create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise' },
-      update: { pedido_cotacao, for_codigo, prazo },
+      create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise', ...previsao },
+      update: { pedido_cotacao, for_codigo, prazo, ...previsao },
     });
   }
 

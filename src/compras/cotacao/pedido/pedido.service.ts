@@ -757,6 +757,7 @@ export class PedidoService {
     const freteByFor: Record<number, number> = {};
     const prazoByFor: Record<string, string> = {};
     const nomeFreteByFor: Record<string, string> = {};
+    const previsaoChegadaByFor: Record<string, Date | null> = {};
     for (const it of itens) {
       const f = Number(it.for_codigo);
       if (!Number.isFinite(f)) continue;
@@ -770,6 +771,20 @@ export class PedidoService {
       }
       if (nomeFreteByFor[f] === undefined && 'nomeFrete' in it) {
       nomeFreteByFor[f] = typeof it.nomeFrete === 'string' ? it.nomeFrete : String(it.nomeFrete);
+      }
+      if (previsaoChegadaByFor[f] === undefined && 'previsao_chegada' in it) {
+        const pc = it.previsao_chegada;
+        if (pc === null || pc === undefined || pc === '') {
+          previsaoChegadaByFor[f] = null;
+        } else {
+          const parsed = new Date(pc);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new BadRequestException(
+              `previsao_chegada inválida: ${String(pc)}`,
+            );
+          }
+          previsaoChegadaByFor[f] = parsed;
+        }
       }
     }
 
@@ -786,6 +801,7 @@ export class PedidoService {
           pedido_cotacao,
           for_codigo,
           prazoByFor[for_codigo],
+          previsaoChegadaByFor[for_codigo],
         );
 
         // Limpa itens e recria
