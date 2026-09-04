@@ -270,6 +270,7 @@ export class PedidoService {
     const results: Array<{
       id: string;
       pedido_cotacao: number;
+      pedido_celta: number | null;
       for_codigo: number;
       for_nome: string | null;
       created_at: Date;
@@ -288,6 +289,13 @@ export class PedidoService {
     // local + uma única leitura do ERP para os ausentes. Resolver dentro do
     // loop serializa uma consulta por pedido — e cada ida ao CONSULTA pode
     // custar segundos, travando a abertura da tela.
+    // Número do pedido no Celta (quando já foi enviado): uma única leitura da
+    // amarração para todos os pedidos da listagem.
+    const celtaPorPedido = new Map<string, number>();
+    for (const v of await this.repo.findVinculosCeltaByPedidosIntranet(pedidos.map((p) => p.id))) {
+      celtaPorPedido.set(v.pedido_intranet, v.pedido_celta);
+    }
+
     const codigosForn = [
       ...new Set(pedidos.map((p) => Number(p.for_codigo)).filter(Number.isFinite)),
     ];
@@ -347,6 +355,7 @@ export class PedidoService {
       results.push({
         id: p.id,
         pedido_cotacao: p.pedido_cotacao,
+        pedido_celta: celtaPorPedido.get(p.id) ?? null,
         for_codigo: p.for_codigo,
         status: p.status ?? '',
         for_nome,

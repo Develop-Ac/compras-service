@@ -407,6 +407,15 @@ export class PedidoRepository {
     });
   }
 
+  /** Amarrações intranet <-> celta de vários pedidos de uma vez (listagem) */
+  async findVinculosCeltaByPedidosIntranet(ids: string[]) {
+    if (!ids.length) return [];
+    return this.prisma.com_pedido_intranet_celta.findMany({
+      where: { pedido_intranet: { in: ids } },
+      select: { pedido_intranet: true, pedido_celta: true },
+    });
+  }
+
   /** Busca a amarração intranet <-> celta pelo id do pedido da intranet */
   async findVinculoCeltaByPedidoIntranet(pedido_intranet: string) {
     return this.prisma.com_pedido_intranet_celta.findUnique({
