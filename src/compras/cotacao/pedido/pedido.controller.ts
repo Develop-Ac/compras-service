@@ -357,7 +357,8 @@ export class PedidoController {
     description:
       'Recebe apenas o pedido_id na URL. O corpo enviado para a rota /cotacoes ' +
       '(API definida em API_COMPRAS_SERVICE) é montado a partir do próprio pedido. ' +
-      'Esta rota não recebe body.',
+      'Só vão os itens com visto de Carlos ou Renato (carlos = true ou renato = true); ' +
+      'sem nenhum item autorizado a rota responde 400 e nada é enviado. Esta rota não recebe body.',
   })
   @ApiParam({
     name: 'id',

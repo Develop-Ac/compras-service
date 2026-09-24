@@ -1063,7 +1063,13 @@ export class PedidoService {
     // A intranet trabalha sempre na empresa 3 (mesmo default usado no restante do módulo).
     const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
 
-    const itens = (pedido.itens ?? []).map((item) => {
+    // Só vai para o Celta o que Carlos ou Renato marcaram na tela do pedido.
+    // Item sem visto fica na intranet (aparece no gerencial), mas não é comprado.
+    const todosItens = pedido.itens ?? [];
+    const autorizados = todosItens.filter((item) => item.carlos === true || item.renato === true);
+    const ignorados = todosItens.length - autorizados.length;
+
+    const itens = autorizados.map((item) => {
       const quantidade = Number(item.quantidade ?? 0);
       const unitario = Number(item.valor_unitario ?? 0);
       return {
@@ -1076,8 +1082,13 @@ export class PedidoService {
       };
     });
 
-    if (itens.length === 0) {
+    if (todosItens.length === 0) {
       throw new BadRequestException(`Pedido ${id} não possui itens para enviar`);
+    }
+    if (itens.length === 0) {
+      throw new BadRequestException(
+        `Pedido ${id} não possui itens autorizados (visto de Carlos ou Renato); nada foi enviado ao Celta`,
+      );
     }
 
     const base = String(process.env.API_COMPRAS_SERVICE ?? '')
@@ -1151,10 +1162,14 @@ export class PedidoService {
 
     return {
       ok: true,
-      message: 'Pedido enviado para o Celta com sucesso',
+      message:
+        `Pedido enviado para o Celta com sucesso (${itens.length} de ${todosItens.length} itens` +
+        (ignorados ? `; ${ignorados} sem visto de Carlos/Renato não foram enviados)` : ')'),
       pedido_id: id,
       pedido_intranet,
       pedido_celta,
+      itens_enviados: itens.length,
+      itens_ignorados: ignorados,
       status: resp.status,
       vinculo,
       data,
