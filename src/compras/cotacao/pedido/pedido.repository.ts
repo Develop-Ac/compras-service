@@ -42,8 +42,8 @@ export class PedidoRepository {
     return item.referencia;
   }
 
-  /** Busca referências de múltiplos itens em uma única query */
-  private async findReferenciasEmLote(
+  /** Busca referências de múltiplos itens em uma única query (usada também na troca por referência) */
+  async findReferenciasEmLote(
     pairs: { pro_codigo: number; for_codigo: number }[],
   ): Promise<Map<string, string>> {
     if (!pairs.length) return new Map();

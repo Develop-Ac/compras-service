@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { PedidoService } from './pedido.service';
 import { PedidoRepository } from './pedido.repository';
+import { PedidoReferenciaService } from './pedido-referencia.service';
 
 // Se você já tiver um PrismaModule que exporta PrismaService, importe-o.
 // Caso NÃO tenha, descomente a importação direta do PrismaService e adicione-o em providers.
@@ -26,6 +27,7 @@ import { PedidoController } from './pedido.controller';
   providers: [
     PedidoService,
     PedidoRepository,
+    PedidoReferenciaService, // troca o item pela referência do fornecedor ao gerar o pedido
     PrismaService, // se você usa PrismaModule que já exporta PrismaService, remova esta linha
   ],
   exports: [PedidoService],

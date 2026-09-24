@@ -12,6 +12,11 @@ import { OpenQueryService } from '../../../shared/database/openquery/openquery.s
 import { ErpApiService } from '../../../shared/erp-api/erp-api.service';
 import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
 import { GarantiaService } from '../../garantia/garantia.service';
+import {
+  AvisoReferencia,
+  PedidoReferenciaService,
+  Substituicao,
+} from './pedido-referencia.service';
 
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -40,6 +45,7 @@ export class PedidoService {
     private readonly erpApi: ErpApiService,
     private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
     private readonly garantia: GarantiaService,
+    private readonly referencia: PedidoReferenciaService,
   ) {}
 
   /* ----------------------- Utils ----------------------- */
@@ -745,7 +751,26 @@ export class PedidoService {
    * - se não, cria o cabeçalho e os itens.
    */
   async createOrReplace(dto: CreatePedidoDto) {
-    const { pedido_cotacao, itens } = dto;
+    const { pedido_cotacao } = dto;
+
+    // Troca o item pelo produto que responde à referência do fornecedor no ERP
+    // (com_produto_fornecedor_referencia -> /erp/produtos/referencia). Qualquer
+    // problema nesse passo mantém os itens como vieram: a geração do pedido
+    // não pode depender da API do ERP.
+    const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
+    let itens = dto.itens;
+    let substituicoes: Substituicao[] = [];
+    let avisos_referencia: AvisoReferencia[] = [];
+    try {
+      const r = await this.referencia.substituirPorReferencia(dto.itens, empresa);
+      itens = r.itens;
+      substituicoes = r.substituicoes;
+      avisos_referencia = r.avisos;
+    } catch (e: any) {
+      console.warn(
+        `[REFERENCIA] troca por referência falhou (${e?.message ?? e}); itens mantidos.`,
+      );
+    }
 
     const BASE =
       process.env.PUBLIC_BASE_URL?.replace(/\/+$/, '') ||
@@ -862,7 +887,14 @@ export class PedidoService {
           setor: 'Compras',
           tela: 'Comparativo',
           acao: 'Create',
-          descricao: `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores`,
+          descricao:
+            `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores` +
+            (substituicoes.length
+              ? `; ${substituicoes.length} item(ns) trocado(s) pela referência do fornecedor: ` +
+                substituicoes
+                  .map((s) => `${s.de.pro_codigo}->${s.para.pro_codigo} (${s.referencia})`)
+                  .join(', ')
+              : ''),
         }),
       });
 
@@ -881,6 +913,10 @@ export class PedidoService {
         ...p,
         pdf_url: `${BASE}/pedido/${p.id}`,
       })),
+      /** Itens trocados pelo produto que responde à referência do fornecedor no ERP. */
+      substituicoes,
+      /** Referências que existiam mas não geraram troca (não encontrada, ambígua, API fora). */
+      avisos_referencia,
     };
   }
 
