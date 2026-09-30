@@ -12,6 +12,11 @@ import { OpenQueryService } from '../../../shared/database/openquery/openquery.s
 import { ErpApiService } from '../../../shared/erp-api/erp-api.service';
 import { CotacaoSyncService } from '../../cotacao/cotacao-sync/cotacao-sync.service';
 import { GarantiaService } from '../../garantia/garantia.service';
+import {
+  AvisoReferencia,
+  PedidoReferenciaService,
+  Substituicao,
+} from './pedido-referencia.service';
 
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -40,6 +45,7 @@ export class PedidoService {
     private readonly erpApi: ErpApiService,
     private readonly cotacaoSyncService: CotacaoSyncService, // Adicione a injeção aqui
     private readonly garantia: GarantiaService,
+    private readonly referencia: PedidoReferenciaService,
   ) {}
 
   /* ----------------------- Utils ----------------------- */
@@ -270,6 +276,7 @@ export class PedidoService {
     const results: Array<{
       id: string;
       pedido_cotacao: number;
+      pedido_celta: number | null;
       for_codigo: number;
       for_nome: string | null;
       created_at: Date;
@@ -288,6 +295,13 @@ export class PedidoService {
     // local + uma única leitura do ERP para os ausentes. Resolver dentro do
     // loop serializa uma consulta por pedido — e cada ida ao CONSULTA pode
     // custar segundos, travando a abertura da tela.
+    // Número do pedido no Celta (quando já foi enviado): uma única leitura da
+    // amarração para todos os pedidos da listagem.
+    const celtaPorPedido = new Map<string, number>();
+    for (const v of await this.repo.findVinculosCeltaByPedidosIntranet(pedidos.map((p) => p.id))) {
+      celtaPorPedido.set(v.pedido_intranet, v.pedido_celta);
+    }
+
     const codigosForn = [
       ...new Set(pedidos.map((p) => Number(p.for_codigo)).filter(Number.isFinite)),
     ];
@@ -347,6 +361,7 @@ export class PedidoService {
       results.push({
         id: p.id,
         pedido_cotacao: p.pedido_cotacao,
+        pedido_celta: celtaPorPedido.get(p.id) ?? null,
         for_codigo: p.for_codigo,
         status: p.status ?? '',
         for_nome,
@@ -736,7 +751,26 @@ export class PedidoService {
    * - se não, cria o cabeçalho e os itens.
    */
   async createOrReplace(dto: CreatePedidoDto) {
-    const { pedido_cotacao, itens } = dto;
+    const { pedido_cotacao } = dto;
+
+    // Troca o item pelo produto que responde à referência do fornecedor no ERP
+    // (com_produto_fornecedor_referencia -> /erp/produtos/referencia). Qualquer
+    // problema nesse passo mantém os itens como vieram: a geração do pedido
+    // não pode depender da API do ERP.
+    const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
+    let itens = dto.itens;
+    let substituicoes: Substituicao[] = [];
+    let avisos_referencia: AvisoReferencia[] = [];
+    try {
+      const r = await this.referencia.substituirPorReferencia(dto.itens, empresa);
+      itens = r.itens;
+      substituicoes = r.substituicoes;
+      avisos_referencia = r.avisos;
+    } catch (e: any) {
+      console.warn(
+        `[REFERENCIA] troca por referência falhou (${e?.message ?? e}); itens mantidos.`,
+      );
+    }
 
     const BASE =
       process.env.PUBLIC_BASE_URL?.replace(/\/+$/, '') ||
@@ -748,6 +782,7 @@ export class PedidoService {
     const freteByFor: Record<number, number> = {};
     const prazoByFor: Record<string, string> = {};
     const nomeFreteByFor: Record<string, string> = {};
+    const previsaoChegadaByFor: Record<string, Date | null> = {};
     for (const it of itens) {
       const f = Number(it.for_codigo);
       if (!Number.isFinite(f)) continue;
@@ -761,6 +796,20 @@ export class PedidoService {
       }
       if (nomeFreteByFor[f] === undefined && 'nomeFrete' in it) {
       nomeFreteByFor[f] = typeof it.nomeFrete === 'string' ? it.nomeFrete : String(it.nomeFrete);
+      }
+      if (previsaoChegadaByFor[f] === undefined && 'previsao_chegada' in it) {
+        const pc = it.previsao_chegada;
+        if (pc === null || pc === undefined || pc === '') {
+          previsaoChegadaByFor[f] = null;
+        } else {
+          const parsed = new Date(pc);
+          if (Number.isNaN(parsed.getTime())) {
+            throw new BadRequestException(
+              `previsao_chegada inválida: ${String(pc)}`,
+            );
+          }
+          previsaoChegadaByFor[f] = parsed;
+        }
       }
     }
 
@@ -777,6 +826,7 @@ export class PedidoService {
           pedido_cotacao,
           for_codigo,
           prazoByFor[for_codigo],
+          previsaoChegadaByFor[for_codigo],
         );
 
         // Limpa itens e recria
@@ -837,7 +887,14 @@ export class PedidoService {
           setor: 'Compras',
           tela: 'Comparativo',
           acao: 'Create',
-          descricao: `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores`,
+          descricao:
+            `Pedido criado/atualizado para cotação ${dto.pedido_cotacao} com ${itens.length} itens e ${Object.keys(byFor).length} fornecedores` +
+            (substituicoes.length
+              ? `; ${substituicoes.length} item(ns) trocado(s) pela referência do fornecedor: ` +
+                substituicoes
+                  .map((s) => `${s.de.pro_codigo}->${s.para.pro_codigo} (${s.referencia})`)
+                  .join(', ')
+              : ''),
         }),
       });
 
@@ -856,6 +913,10 @@ export class PedidoService {
         ...p,
         pdf_url: `${BASE}/pedido/${p.id}`,
       })),
+      /** Itens trocados pelo produto que responde à referência do fornecedor no ERP. */
+      substituicoes,
+      /** Referências que existiam mas não geraram troca (não encontrada, ambígua, API fora). */
+      avisos_referencia,
     };
   }
 
@@ -1002,7 +1063,13 @@ export class PedidoService {
     // A intranet trabalha sempre na empresa 3 (mesmo default usado no restante do módulo).
     const empresa = Number(process.env.EMPRESA_CELTA ?? 3) || 3;
 
-    const itens = (pedido.itens ?? []).map((item) => {
+    // Só vai para o Celta o que Carlos ou Renato marcaram na tela do pedido.
+    // Item sem visto fica na intranet (aparece no gerencial), mas não é comprado.
+    const todosItens = pedido.itens ?? [];
+    const autorizados = todosItens.filter((item) => item.carlos === true || item.renato === true);
+    const ignorados = todosItens.length - autorizados.length;
+
+    const itens = autorizados.map((item) => {
       const quantidade = Number(item.quantidade ?? 0);
       const unitario = Number(item.valor_unitario ?? 0);
       return {
@@ -1015,8 +1082,13 @@ export class PedidoService {
       };
     });
 
-    if (itens.length === 0) {
+    if (todosItens.length === 0) {
       throw new BadRequestException(`Pedido ${id} não possui itens para enviar`);
+    }
+    if (itens.length === 0) {
+      throw new BadRequestException(
+        `Pedido ${id} não possui itens autorizados (visto de Carlos ou Renato); nada foi enviado ao Celta`,
+      );
     }
 
     const base = String(process.env.API_COMPRAS_SERVICE ?? '')
@@ -1090,10 +1162,14 @@ export class PedidoService {
 
     return {
       ok: true,
-      message: 'Pedido enviado para o Celta com sucesso',
+      message:
+        `Pedido enviado para o Celta com sucesso (${itens.length} de ${todosItens.length} itens` +
+        (ignorados ? `; ${ignorados} sem visto de Carlos/Renato não foram enviados)` : ')'),
       pedido_id: id,
       pedido_intranet,
       pedido_celta,
+      itens_enviados: itens.length,
+      itens_ignorados: ignorados,
       status: resp.status,
       vinculo,
       data,

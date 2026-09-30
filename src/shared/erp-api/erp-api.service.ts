@@ -361,6 +361,21 @@ export class ErpApiService {
   /* ------------------------------- produtos -------------------------------- */
 
   /**
+   * Produto(s) pela referência do fornecedor gravada no cadastro
+   * (PRODUTOS.REF_FORNECEDOR). A mesma referência pode estar em mais de um
+   * produto, por isso volta lista; vazia quando nenhum produto responde.
+   */
+  async produtoPorReferencia(referencia: string, empresa: number): Promise<any[]> {
+    const ref = String(referencia ?? '').trim();
+    if (!ref) return [];
+    return this.pedir(
+      '/erp/produtos/referencia',
+      { empresa, referencia: ref },
+      { checarTruncado: false },
+    );
+  }
+
+  /**
    * Produtos por código, em lote. `campos` aceita coluna de relação
    * ("marca.MAR_DESCRICAO") — por isso a consulta vai pela rota POST.
    */

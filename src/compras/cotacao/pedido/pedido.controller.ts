@@ -261,6 +261,7 @@ export class PedidoController {
               frete: 150.5,
               prazo: '30/60/90',
               nomeFrete: 'Transportadora XYZ',
+              previsao_chegada: '2026-10-10T00:00:00.000Z',
               quantidade: 120,
               qtd_sugerida_min: 80,
               qtd_sugerida_max: 200,
@@ -282,6 +283,7 @@ export class PedidoController {
               frete: 0,
               prazo: '28 DDL',
               nomeFrete: 'CIF',
+              previsao_chegada: null,
               quantidade: 60,
               qtd_sugerida_min: 50,
               qtd_sugerida_max: 90,
@@ -355,7 +357,8 @@ export class PedidoController {
     description:
       'Recebe apenas o pedido_id na URL. O corpo enviado para a rota /cotacoes ' +
       '(API definida em API_COMPRAS_SERVICE) é montado a partir do próprio pedido. ' +
-      'Esta rota não recebe body.',
+      'Só vão os itens com visto de Carlos ou Renato (carlos = true ou renato = true); ' +
+      'sem nenhum item autorizado a rota responde 400 e nada é enviado. Esta rota não recebe body.',
   })
   @ApiParam({
     name: 'id',

@@ -71,6 +71,15 @@ export class PedidoItemDto {
   @IsString()
   nomeFrete!: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Previsão de chegada do pedido do fornecedor (ISO 8601). Salva na coluna previsao_chegada de com_pedido.',
+    example: '2026-10-10T00:00:00.000Z',
+    nullable: true,
+  })
+  @IsOptional() @IsISO8601()
+  previsao_chegada?: string | null;
+
   @ApiProperty({ description: 'Quantidade comprada', example: 120 })
   @IsNumber()
   quantidade!: number;

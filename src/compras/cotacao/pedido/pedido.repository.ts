@@ -42,8 +42,8 @@ export class PedidoRepository {
     return item.referencia;
   }
 
-  /** Busca referências de múltiplos itens em uma única query */
-  private async findReferenciasEmLote(
+  /** Busca referências de múltiplos itens em uma única query (usada também na troca por referência) */
+  async findReferenciasEmLote(
     pairs: { pro_codigo: number; for_codigo: number }[],
   ): Promise<Map<string, string>> {
     if (!pairs.length) return new Map();
@@ -211,11 +211,16 @@ export class PedidoRepository {
     pedido_cotacao: number,
     for_codigo: number,
     prazo: string,
+    previsao_chegada?: Date | null,
   ) {
+    // Só grava previsao_chegada quando enviada; undefined mantém o valor atual.
+    const previsao =
+      previsao_chegada !== undefined ? { previsao_chegada } : {};
+
     return tx.com_pedido.upsert({
       where: { pedido_cotacao_for_codigo: { pedido_cotacao, for_codigo } },
-      create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise' },
-      update: { pedido_cotacao, for_codigo, prazo },
+      create: { pedido_cotacao, for_codigo, prazo, status: 'Aguardando analise', ...previsao },
+      update: { pedido_cotacao, for_codigo, prazo, ...previsao },
     });
   }
 
@@ -404,6 +409,15 @@ export class PedidoRepository {
       where: { pedido_intranet },
       create: { pedido_intranet, pedido_celta },
       update: { pedido_celta },
+    });
+  }
+
+  /** Amarrações intranet <-> celta de vários pedidos de uma vez (listagem) */
+  async findVinculosCeltaByPedidosIntranet(ids: string[]) {
+    if (!ids.length) return [];
+    return this.prisma.com_pedido_intranet_celta.findMany({
+      where: { pedido_intranet: { in: ids } },
+      select: { pedido_intranet: true, pedido_celta: true },
     });
   }
 
