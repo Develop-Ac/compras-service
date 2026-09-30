@@ -44,7 +44,7 @@ export class FornecedorRepository {
       },
       },
       include: {
-      itens: true,
+      itens: { where: { quantidade: { not: 0 } } },
       }
     });
   }

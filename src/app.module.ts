@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AvisosModule } from './common/avisos/avisos.module';
+import { CATALOGO_COMPRAS } from './avisos.catalogo';
 import { ConfigModule } from '@nestjs/config';
 import { RouterModule } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -27,6 +29,8 @@ imports: [
     // Global: o ErpApiService lê ERP_API_URL/TOKEN e não deve depender de qual
     // outro módulo chamou forRoot antes dele.
     ConfigModule.forRoot({ isGlobal: true }),
+    // Avisos da intranet via avisos-client padrão (catálogo em src/avisos.catalogo.ts)
+    AvisosModule.forRoot({ servico: 'compras', catalogo: CATALOGO_COMPRAS }),
     ScheduleModule.forRoot(),
     PrismaModule,
     // Leitura do ERP sem passar pelo SQL Server (global, como o OpenQuery).

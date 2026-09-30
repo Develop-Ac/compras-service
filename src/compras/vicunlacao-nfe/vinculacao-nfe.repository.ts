@@ -373,7 +373,7 @@ export class VinculacaoNfeRepository {
   async findPedidoItens(pedidoIds: string[]) {
     if (!pedidoIds.length) return [];
     return this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: { in: pedidoIds } },
+      where: { pedido_id: { in: pedidoIds }, quantidade: { not: 0 } },
       select: {
         id: true,
         pedido_id: true,
@@ -689,7 +689,7 @@ export class VinculacaoNfeRepository {
   /** Conta quantos itens (com_pedido_itens) distintos por pro_codigo o pedido tem. */
   async countProCodigosDoPedido(pedidoId: string): Promise<number> {
     const rows = await this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: pedidoId },
+      where: { pedido_id: pedidoId, quantidade: { not: 0 } },
       select: { pro_codigo: true },
       distinct: ['pro_codigo'],
     });
@@ -872,7 +872,7 @@ export class VinculacaoNfeRepository {
    */
   async findItensDoPedido(pedidoId: string) {
     return this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: pedidoId },
+      where: { pedido_id: pedidoId, quantidade: { not: 0 } },
       select: {
         pro_codigo: true,
         pro_descricao: true,
@@ -1044,6 +1044,7 @@ export class VinculacaoNfeRepository {
     const rows = await this.prisma.com_pedido_itens.findMany({
       where: {
         pedido_id: pedidoId,
+        quantidade: { not: 0 },
         OR: [{ status_item: null }, { status_item: { not: 'nao_atendido' } }],
       },
       select: { pro_codigo: true },
@@ -1134,7 +1135,7 @@ export class VinculacaoNfeRepository {
   async reescoparVinculoItens(vinculoId: string, pedidoId: string): Promise<void> {
     // Itens reais do pedido (deste fornecedor), deduplicados por pro_codigo.
     const reais = await this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: pedidoId },
+      where: { pedido_id: pedidoId, quantidade: { not: 0 } },
       select: {
         pro_codigo: true,
         pro_descricao: true,

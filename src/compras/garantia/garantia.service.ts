@@ -194,7 +194,7 @@ export class GarantiaService {
 
     // Itens do pedido.
     const itens = await this.prisma.com_pedido_itens.findMany({
-      where: { pedido_id: pedidoId },
+      where: { pedido_id: pedidoId, quantidade: { not: 0 } },
       select: { pro_codigo: true },
     });
     const codigosPedido = [...new Set(itens.map((i) => String(i.pro_codigo)))];

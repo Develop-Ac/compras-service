@@ -22,9 +22,9 @@ export class PedidoRepository {
       where: { itens: { some: { quantidade: { not: 0 } } } },
       orderBy: { created_at: 'desc' },
       include: {
-        _count: { select: { itens: true } },
+        _count: { select: { itens: { where: { quantidade: { not: 0 } } } } },
         // pro_codigo/pro_descricao usados para o filtro avançado por item (busca no cliente).
-        itens: { select: { quantidade: true, valor_unitario: true, pro_codigo: true, pro_descricao: true } },
+        itens: { where: { quantidade: { not: 0 } }, select: { quantidade: true, valor_unitario: true, pro_codigo: true, pro_descricao: true } },
       },
     });
   }
