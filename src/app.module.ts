@@ -23,6 +23,7 @@ import { VinculacaoNfeModule } from './compras/vicunlacao-nfe/vinculacao-nfe.mod
 import { FornecedorGrupoModule } from './compras/fornecedor-grupo/fornecedor-grupo.module';
 import { GarantiaModule } from './compras/garantia/garantia.module';
 import { CompraCasadaModule } from './compras/compra-casada/compra-casada.module';
+import { ConferenciaPrecosModule } from './compras/conferencia-precos/conferencia-precos.module';
 
 @Module({
 imports: [
@@ -49,6 +50,7 @@ imports: [
     FornecedorGrupoModule,
     GarantiaModule,
     CompraCasadaModule,
+    ConferenciaPrecosModule,
 
     PrometheusModule.register({
       defaultMetrics: { enabled: true }, // CPU, memória, event loop, GC
@@ -68,7 +70,8 @@ imports: [
       { path: 'compras', module: VinculacaoNfeModule },
       { path: 'compras', module: FornecedorGrupoModule },
       { path: 'compras', module: GarantiaModule },
-      { path: 'compras', module: CompraCasadaModule }
+      { path: 'compras', module: CompraCasadaModule },
+      { path: 'compras', module: ConferenciaPrecosModule }
     ]),
   ],
   controllers: [AppController],

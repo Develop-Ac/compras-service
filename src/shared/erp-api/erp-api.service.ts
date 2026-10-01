@@ -89,8 +89,8 @@ export class ErpApiService {
   private async pedir(
     caminho: string,
     params: Record<string, any> = {},
-    opts: { exigirCompleto?: boolean; checarTruncado?: boolean } = {},
-  ): Promise<any[]> {
+    opts: { exigirCompleto?: boolean; checarTruncado?: boolean; bruto?: boolean } = {},
+  ): Promise<any> {
     const url = new URL(this.base + caminho);
     for (const [chave, valor] of Object.entries(params)) {
       if (valor === undefined || valor === null || valor === '') continue;
@@ -127,7 +127,8 @@ export class ErpApiService {
         this.logger.warn(`[ERP-API] ${aviso} — reduza o filtro.`);
       }
 
-      return json?.dados ?? [];
+      // `bruto`: rota nomeada que devolve um objeto (cabeçalho + itens), não o envelope de lista.
+      return opts.bruto ? json : (json?.dados ?? []);
     } catch (erro: any) {
       this.registrarFalha(caminho, erro);
       throw erro;
@@ -531,6 +532,26 @@ export class ErpApiService {
       ),
     );
     return partes.flat();
+  }
+
+  /** Consulta livre em NF_ENTRADA (corpo do montador da API). Falha se vier truncada. */
+  async nfEntradaConsulta(corpo: Record<string, any>): Promise<any[]> {
+    return this.pedirPost('/erp/nf-entrada/consulta', corpo, { exigirCompleto: true });
+  }
+
+  /**
+   * Cabeçalho + itens com custos, preços atuais/anteriores e saldo anterior de
+   * UMA NF de entrada (consulta nomeada da conferência de preços). Aceita a
+   * resposta como objeto puro ou dentro do envelope `dados`.
+   */
+  async nfEntradaPrecos(nfe: number, empresa: number): Promise<any | null> {
+    const json = await this.pedir(
+      `/erp/nf-entrada/${nfe}/precos`,
+      { empresa },
+      { checarTruncado: false, bruto: true },
+    );
+    const dados = json?.dados ?? json;
+    return (Array.isArray(dados) ? dados[0] : dados) ?? null;
   }
 
   /* ------------------------------ faturamento ------------------------------- */

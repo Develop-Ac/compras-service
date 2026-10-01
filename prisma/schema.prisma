@@ -1529,6 +1529,69 @@ model com_precificacao_faixa {
   @@index([tabela_preco, vigencia_inicio], map: "idx_com_precificacao_faixa_historico")
 }
 
+/// Fila da conferência de preços: uma linha por NF de entrada (docs/conferencia-precos.md).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model com_precificacao_conferencia {
+  id              Int                                 @id @default(autoincrement())
+  empresa         Int                                 @default(3)
+  nfe             Int
+  nota_fiscal     Int
+  serie           String?                             @db.VarChar(10)
+  chave_nfe       String?                             @db.VarChar(44)
+  for_codigo      Int?
+  for_nome        String?                             @db.VarChar(255)
+  opf_codigo      Int?
+  dt_entrada      DateTime                            @db.Date
+  total_nota      Decimal?                            @db.Decimal(15, 2)
+  status          String                              @default("pendente") @db.VarChar(12)
+  itens_total     Int                                 @default(0)
+  itens_abaixo    Int                                 @default(0)
+  itens_sem_custo Int                                 @default(0)
+  conferido_por   String?                             @db.VarChar(120)
+  conferido_em    DateTime?                           @db.Timestamp(6)
+  observacao      String?
+  removida_motivo String?                             @db.VarChar(120)
+  criado_em       DateTime                            @default(now()) @db.Timestamp(6)
+  atualizado_em   DateTime                            @default(now()) @db.Timestamp(6)
+  itens           com_precificacao_conferencia_item[]
+
+  @@unique([empresa, nfe], map: "uq_com_precificacao_conferencia_nfe")
+  @@index([status, dt_entrada(sort: Desc)], map: "idx_com_precificacao_conferencia_fila")
+}
+
+/// Fotografia por item, gravada só na confirmação da conferência de preços.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model com_precificacao_conferencia_item {
+  id                    Int                          @id @default(autoincrement())
+  conferencia_id        Int
+  pro_codigo            Int
+  pro_descricao         String?                      @db.VarChar(255)
+  quantidade            Decimal?                     @db.Decimal(15, 4)
+  saldo_anterior        Decimal?                     @db.Decimal(15, 4)
+  preco_custo           Decimal?                     @db.Decimal(15, 4)
+  custo_medio           Decimal?                     @db.Decimal(15, 4)
+  custo_base            Decimal?                     @db.Decimal(15, 4)
+  custo_base_origem     String                       @db.VarChar(8)
+  preco_varejo          Decimal?                     @db.Decimal(15, 2)
+  preco_atacado_esp     Decimal?                     @db.Decimal(15, 2)
+  preco_atacado         Decimal?                     @db.Decimal(15, 2)
+  preco_ant_varejo      Decimal?                     @db.Decimal(15, 2)
+  preco_ant_atacado_esp Decimal?                     @db.Decimal(15, 2)
+  preco_ant_atacado     Decimal?                     @db.Decimal(15, 2)
+  piso_varejo           Decimal?                     @db.Decimal(15, 2)
+  piso_atacado_esp      Decimal?                     @db.Decimal(15, 2)
+  piso_atacado          Decimal?                     @db.Decimal(15, 2)
+  semaforo_varejo       String                       @db.VarChar(10)
+  semaforo_atacado_esp  String                       @db.VarChar(10)
+  semaforo_atacado      String                       @db.VarChar(10)
+  semaforo_item         String                       @db.VarChar(10)
+  justificativa         String?
+  criado_em             DateTime                     @default(now()) @db.Timestamp(6)
+  conferencia           com_precificacao_conferencia @relation(fields: [conferencia_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conferencia_id, pro_codigo], map: "uq_com_precificacao_conferencia_item")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model esc_documento {
   id              BigInt   @id @default(autoincrement())

@@ -109,6 +109,8 @@ async function bootstrap() {
       'Origin',
       'Cache-Control',
       'Pragma',
+      // Usuário logado (conferido_por da conferência de preços).
+      'x-user-id',
     ],
     exposedHeaders: ['Content-Disposition'],
     maxAge: 86400, // cache do preflight por 1 dia
